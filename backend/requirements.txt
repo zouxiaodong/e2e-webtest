@@ -1,0 +1,39 @@
+# FastAPI and web framework
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.35
+alembic==1.13.3
+aiomysql==0.2.0
+pymysql==1.1.0
+cryptography==41.0.7
+
+# LLM and AI
+langchain==0.2.16
+langchain-community==0.2.16
+langchain-core==0.2.38
+langchain-experimental==0.0.65
+langchain-openai==0.1.23
+langgraph==0.2.18
+langgraph-checkpoint==1.0.9
+openai==1.43.0
+python-dotenv==1.0.1
+
+# Browser automation
+playwright==1.47.0
+
+# Testing
+pytest==8.3.3
+pytest-asyncio==0.24.0
+pytest-playwright==0.5.2
+ipytest==0.14.2
+nest-asyncio==1.6.0
+
+# Utilities
+pydantic==2.9.2
+pydantic-settings==2.5.2
+python-dateutil==2.9.0.post0
+aiofiles==24.1.0
+Pillow==10.4.0
