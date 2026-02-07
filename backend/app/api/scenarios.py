@@ -177,6 +177,22 @@ async def generate_scenario_cases(
     await db.commit()
 
     try:
+        # 先删除该场景下所有测试用例关联的测试报告
+        print(f"   Deleting existing test reports for scenario {scenario_id}")
+        # 获取该场景下所有测试用例的ID
+        result = await db.execute(
+            select(TestCase.id).where(TestCase.scenario_id == scenario_id)
+        )
+        test_case_ids = [row[0] for row in result.fetchall()]
+        
+        if test_case_ids:
+            # 删除关联的测试报告
+            await db.execute(
+                delete(TestReport).where(TestReport.test_case_id.in_(test_case_ids))
+            )
+            await db.commit()
+            print(f"   Deleted {len(test_case_ids)} test reports")
+        
         # 删除该场景下所有现有的测试用例
         print(f"   Deleting existing test cases for scenario {scenario_id}")
         await db.execute(
@@ -204,10 +220,19 @@ async def generate_scenario_cases(
 
             # 生成测试脚本
             print(f"   Generating script for test case: {case_data['name']}")
+            # 从全局配置读取是否自动检测验证码
+            auto_detect_config = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.AUTO_DETECT_CAPTCHA)
+            )
+            auto_detect_captcha = True  # 默认启用
+            config = auto_detect_config.scalar_one_or_none()
+            if config and config.config_value:
+                auto_detect_captcha = config.config_value.lower() == "true"
+            print(f"   Auto detect captcha from config: {auto_detect_captcha}")
             script_result = await test_executor.execute_workflow(
                 case_data["user_query"],
                 scenario.target_url,
-                auto_detect_captcha=False
+                auto_detect_captcha=auto_detect_captcha
             )
             script = script_result.get("script", "")
             print(f"   Script generated: {len(script)} chars")

@@ -326,19 +326,19 @@ class TestExecutor:
                 print(f"   生成的代码:\n{action_code}")
                 continue
 
-            # 添加操作注释和代码
+            # 添加操作注释和代码（使用16空格缩进，因为在try块内部）
             action_codes.append("")
-            action_codes.append(f"        # Action {i}: {action}")
-            action_codes.append(f"        print('[TEST] Action {i} started')")
+            action_codes.append(f"                # Action {i}: {action}")
+            action_codes.append(f"                print('[TEST] Action {i} started')")
             print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
 
-            # 添加操作代码（缩进处理）
+            # 添加操作代码（缩进处理 - 16空格）
             for line in action_code.strip().split('\n'):
-                action_codes.append(f"        {line}")
+                action_codes.append(f"                {line}")
 
             # 添加3秒延迟（使用 asyncio.sleep 更明显）
-            action_codes.append("        await asyncio.sleep(3)")
-            action_codes.append(f"        print('[TEST] Action {i} completed')")
+            action_codes.append("                await asyncio.sleep(3)")
+            action_codes.append(f"                print('[TEST] Action {i} completed')")
 
             aggregated_actions += "\n" + action_code
 
@@ -379,6 +379,7 @@ async def test_generated():
             print("[TEST] Initial wait completed")
             
             try:
+                # Execute all actions
 {actions_str}
             except Exception as e:
                 print(f"[TEST] ERROR during actions: {{e}}")
