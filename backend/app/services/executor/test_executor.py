@@ -327,7 +327,6 @@ class TestExecutor:
                 continue
 
             # 添加操作注释和代码（使用16空格缩进，因为在try块内部）
-            action_codes.append("")
             action_codes.append(f"                # Action {i}: {action}")
             action_codes.append(f"                print('[TEST] Action {i} started')")
             print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
