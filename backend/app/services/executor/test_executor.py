@@ -252,54 +252,52 @@ class TestExecutor:
             base_url = settings.BAILIAN_BASE_URL
             vl_model = settings.BAILIAN_VL_MODEL
 
-            captcha_handler_code = f'''
-        # 自动检测并处理验证码
-        try:
-            # 检查是否存在验证码图片
-            captcha_img = page.locator('img[src*="captcha"], img[id*="captcha"], .captcha img').first
-            if await captcha_img.is_visible(timeout=3000):
-                print('检测到验证码')
-                # 截取验证码图片
-                captcha_bytes = await captcha_img.screenshot()
-                import base64
-                captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')
-
-                # 调用LLM识别验证码
-                import openai
-                client = openai.OpenAI(api_key="{api_key}", base_url="{base_url}")
-
-                response = client.chat.completions.create(
-                    model="{vl_model}",
-                    messages=[
-                        {{
-                            "role": "system",
-                            "content": "你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。"
-                        }},
-                        {{
-                            "role": "user",
-                            "content": [
-                                {{"type": "text", "text": "请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。"}},
-                                {{"type": "image_url", "image_url": {{"url": f"data:image/png;base64,{{captcha_base64}}"}}}}
-                            ]
-                        }}
-                    ],
-                    temperature=0.0,
-                    max_tokens=50
-                )
-
-                captcha_text = response.choices[0].message.content.strip()
-                print(f'识别到验证码: {{captcha_text}}')
-
-                # 查找验证码输入框并填写
-                captcha_input = page.locator('input[name*="captcha"], input[id*="captcha"], input[placeholder*="验证码"]').first
-                if await captcha_input.is_visible(timeout=3000):
-                    await captcha_input.fill(captcha_text)
-                    print('验证码已填写')
-        except Exception as e:
-            print(f'验证码处理失败: {{e}}')
-            pass  # 没有验证码或处理失败
-'''
-            action_codes.append(captcha_handler_code)
+            # 添加验证码处理代码（使用16空格缩进，与action_codes保持一致）
+            action_codes.append(f"                # 自动检测并处理验证码")
+            action_codes.append(f"                try:")
+            action_codes.append(f"                    # 检查是否存在验证码图片")
+            action_codes.append(f"                    captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
+            action_codes.append(f"                    if await captcha_img.is_visible(timeout=3000):")
+            action_codes.append(f"                        print('检测到验证码')")
+            action_codes.append(f"                        # 截取验证码图片")
+            action_codes.append(f"                        captcha_bytes = await captcha_img.screenshot()")
+            action_codes.append(f"                        import base64")
+            action_codes.append(f"                        captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
+            action_codes.append(f"")
+            action_codes.append(f"                        # 调用LLM识别验证码")
+            action_codes.append(f"                        import openai")
+            action_codes.append(f"                        client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
+            action_codes.append(f"")
+            action_codes.append(f"                        response = client.chat.completions.create(")
+            action_codes.append(f"                            model='{vl_model}',")
+            action_codes.append(f"                            messages=[")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"system\",")
+            action_codes.append(f"                                    \"content\": \"你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。\"")
+            action_codes.append(f"                                }},")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"user\",")
+            action_codes.append(f"                                    \"content\": [")
+            action_codes.append(f"                                        {{\"type\": \"text\", \"text\": \"请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。\"}},")
+            action_codes.append(f"                                        {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{captcha_base64}}\"}}}}")
+            action_codes.append(f"                                    ]")
+            action_codes.append(f"                                }}")
+            action_codes.append(f"                            ],")
+            action_codes.append(f"                            temperature=0.0,")
+            action_codes.append(f"                            max_tokens=50")
+            action_codes.append(f"                        )")
+            action_codes.append(f"")
+            action_codes.append(f"                        captcha_text = response.choices[0].message.content.strip()")
+            action_codes.append(f"                        print(f'识别到验证码: {{captcha_text}}')")
+            action_codes.append(f"")
+            action_codes.append(f"                        # 查找验证码输入框并填写")
+            action_codes.append(f"                        captcha_input = page.locator('input[name*=\"captcha\"], input[id*=\"captcha\"], input[placeholder*=\"验证码\"]').first")
+            action_codes.append(f"                        if await captcha_input.is_visible(timeout=3000):")
+            action_codes.append(f"                            await captcha_input.fill(captcha_text)")
+            action_codes.append(f"                            print('验证码已填写')")
+            action_codes.append(f"                except Exception as e:")
+            action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
+            action_codes.append(f"                    pass  # 没有验证码或处理失败")
 
         # 为每个操作生成代码
         # 使用获取到的HTML内容作为DOM状态
