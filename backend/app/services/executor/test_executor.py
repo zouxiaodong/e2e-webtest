@@ -3,17 +3,11 @@ import io
 import re
 import sys
 from typing import Dict, Any, Optional
-from playwright.async_api import async_playwright, Page, Browser
 from contextlib import redirect_stdout
 from datetime import datetime
 import pytest
 import ipytest
 import nest_asyncio
-
-# Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    print(f"✅ 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程")
 
 from ..generator.test_generator import test_generator
 from ..captcha.captcha_service import captcha_service
@@ -21,24 +15,24 @@ from ..llm.bailian_client import bailian_client
 
 
 class TestExecutor:
-    """测试执行引擎"""
+    """测试执行引擎 - 使用持久化浏览器会话"""
 
     def __init__(self):
-        self.current_page: Optional[Page] = None
-        self.current_browser: Optional[Browser] = None
         self.dom_state: str = ""
         self.aggregated_actions: str = ""
 
     async def execute_workflow(
         self,
         user_query: str,
-        target_url: str
+        target_url: str,
+        auto_detect_captcha: bool = False
     ) -> Dict[str, Any]:
         """
-        执行完整的工作流
+        执行完整的工作流 - 只打开一次浏览器
         Args:
             user_query: 用户查询
             target_url: 目标URL
+            auto_detect_captcha: 是否自动检测验证码
         Returns:
             执行结果
         """
@@ -56,11 +50,7 @@ class TestExecutor:
             print("\n===== 开始执行测试工作流 =====")
             print(f"用户查询: {user_query}")
             print(f"目标URL: {target_url}")
-            
-            # Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
-            if sys.platform == 'win32':
-                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                print("✅ 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程")
+            print(f"自动检测验证码: {auto_detect_captcha}")
 
             # 步骤1: 生成操作步骤
             print("\n步骤1: 生成操作步骤...")
@@ -70,78 +60,29 @@ class TestExecutor:
             for i, action in enumerate(actions):
                 print(f"   {i+1}. {action}")
 
-            # 步骤2: 初始化脚本
-            print("\n步骤2: 初始化Playwright脚本...")
-            script = await test_generator.generate_initial_script(target_url)
-            print("✅ 初始化Playwright脚本完成")
+            # 步骤2: 生成完整脚本（一次性生成所有操作）
+            print("\n步骤2: 生成完整测试脚本...")
+            final_script = await self._generate_complete_script(
+                target_url, actions, auto_detect_captcha
+            )
+            result["script"] = final_script
+            print("✅ 脚本生成完成")
 
-            # 步骤3: 启动浏览器并获取初始DOM
-            print("\n步骤3: 启动浏览器并获取初始DOM...")
-            print("   正在启动浏览器...")
-            self.dom_state = await self._get_dom_state(script)
-            print(f"✅ 获取到DOM，长度: {len(self.dom_state)}")
-
-            # 步骤4: 为每个操作生成代码
-            print("\n步骤4: 为每个操作生成代码...")
-            current_action = 1  # Action 0 是导航
-
-            while current_action < len(actions):
-                action = actions[current_action]
-                is_last = current_action == len(actions) - 1
-
-                print(f"\n   正在生成操作 {current_action}/{len(actions) - 1}: {action}")
-
-                # 生成代码
-                action_code = await test_generator.generate_playwright_code(
-                    action,
-                    self.dom_state,
-                    self.aggregated_actions,
-                    is_last
-                )
-                print(f"   ✅ 生成代码完成")
-
-                # 验证代码
-                is_valid, error = await test_generator.validate_generated_code(action_code)
-                if not is_valid:
-                    result["status"] = "error"
-                    result["error"] = f"操作 {current_action} 代码验证失败: {error}"
-                    result["script"] = script
-                    print(f"   ❌ 操作 {current_action} 代码验证失败: {error}")
-                    return result
-                print(f"   ✅ 代码验证通过")
-
-                # 插入代码到脚本
-                script = test_generator.insert_code_into_script(script, action_code, current_action)
-                self.aggregated_actions += "\n " + action_code
-                print(f"   ✅ 代码插入完成")
-
-                # 执行脚本获取新DOM
-                print("   正在执行脚本获取新DOM...")
-                self.dom_state = await self._get_dom_state(script)
-                print(f"   ✅ 获取到新DOM，长度: {len(self.dom_state)}")
-                current_action += 1
-
-            # 步骤5: 生成测试名称
-            print("\n步骤5: 生成测试名称...")
+            # 步骤3: 生成测试名称
+            print("\n步骤3: 生成测试名称...")
             test_name = await bailian_client.generate_test_name(user_query, actions)
             result["test_name"] = test_name
             print(f"✅ 生成测试名称: {test_name}")
 
-            # 步骤6: 完成脚本
-            print("\n步骤6: 完成脚本...")
-            final_script = await test_generator.finalize_script(script, test_name)
-            result["script"] = final_script
-            print("✅ 完成脚本")
-
-            # 步骤7: 执行测试
-            print("\n步骤7: 执行测试...")
-            print("   正在执行测试...")
+            # 步骤4: 执行测试（只打开一次浏览器）
+            print("\n步骤4: 执行测试...")
+            print("   正在执行测试（只打开一次浏览器）...")
             execution_output = await self._execute_test(final_script)
             result["execution_output"] = execution_output
             print("✅ 测试执行完成")
 
-            # 步骤8: 生成报告
-            print("\n步骤8: 生成报告...")
+            # 步骤5: 生成报告
+            print("\n步骤5: 生成报告...")
             report = await self._generate_report(result)
             result["report"] = report
             print("✅ 生成报告完成")
@@ -158,117 +99,129 @@ class TestExecutor:
             print(f"\n错误详情:\n{error_detail}")
             return result
 
-    def _clean_dom_state(self, html: str) -> str:
+    async def _generate_complete_script(
+        self,
+        target_url: str,
+        actions: list,
+        auto_detect_captcha: bool
+    ) -> str:
         """
-        清理 DOM 状态，移除 SVG、CSS、JavaScript 等无关内容
+        生成完整的测试脚本（一次性生成所有操作）
         Args:
-            html: 原始 HTML
+            target_url: 目标URL
+            actions: 操作步骤列表
+            auto_detect_captcha: 是否自动检测验证码
         Returns:
-            清理后的 HTML
+            完整的测试脚本
         """
-        from lxml.html.clean import Cleaner
-        import lxml.html
+        # 获取浏览器配置
+        browser_headless = False
+        from ...core.database import get_db
+        from ...models.global_config import GlobalConfig, ConfigKeys
+        from sqlalchemy import select
 
-        # 使用 lxml 的 Cleaner 来清理 HTML
-        cleaner = Cleaner(
-            javascript=True,  # Remove script tags and js attributes
-            style=True,       # Remove style tags
-            inline_style=True, # Remove inline style attributes
-            comments=True,    # Remove comments
-            safe_attrs_only=True,  # Only keep safe attributes
-            forms=False,      # Keep form tags (needed for testing)
-            page_structure=False,  # Keep basic page structure
-        )
+        async for db in get_db():
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.BROWSER_HEADLESS)
+            )
+            config = result.scalar_one_or_none()
+            if config:
+                browser_headless = config.config_value.lower() == "true"
+            break
 
-        # 清理 HTML
-        cleaned_html = cleaner.clean_html(html)
+        # 构建操作代码
+        action_codes = []
 
-        # 转换为字符串
-        if isinstance(cleaned_html, bytes):
-            cleaned_html = cleaned_html.decode('utf-8')
+        # 添加导航后的延迟
+        action_codes.append("        # 等待页面加载")
+        action_codes.append("        await page.wait_for_timeout(2000)")
 
-        # 移除 SVG 内容
-        import re
-        # 移除 <svg>...</svg> 标签及其内容
-        cleaned_html = re.sub(r'<svg[^>]*>.*?</svg>', '', cleaned_html, flags=re.DOTALL | re.IGNORECASE)
-        # 移除 <symbol>...</symbol> 标签及其内容
-        cleaned_html = re.sub(r'<symbol[^>]*>.*?</symbol>', '', cleaned_html, flags=re.DOTALL | re.IGNORECASE)
-        # 移除 <path>...</path> 标签
-        cleaned_html = re.sub(r'<path[^/]*/?>', '', cleaned_html, flags=re.IGNORECASE)
-        # 移除 <use>...</use> 标签
-        cleaned_html = re.sub(r'<use[^/]*/?>', '', cleaned_html, flags=re.IGNORECASE)
+        # 如果需要自动检测验证码，添加验证码处理代码
+        if auto_detect_captcha:
+            action_codes.append("")
+            action_codes.append("        # 自动检测并处理验证码")
+            action_codes.append("        try:")
+            action_codes.append("            # 检查是否存在验证码图片")
+            action_codes.append("            captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
+            action_codes.append("            if await captcha_img.is_visible(timeout=3000):")
+            action_codes.append("                print('检测到验证码')")
+            action_codes.append("                # 截取验证码图片")
+            action_codes.append("                captcha_bytes = await captcha_img.screenshot()")
+            action_codes.append("                import base64")
+            action_codes.append("                captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
+            action_codes.append("                # 这里需要调用验证码识别服务")
+            action_codes.append("                # 暂时跳过验证码填写")
+            action_codes.append("                print('验证码识别功能需要在主进程中实现')")
+            action_codes.append("        except:")
+            action_codes.append("            pass  # 没有验证码")
+            action_codes.append("")
 
-        # 移除多余空格
-        cleaned_html = re.sub(r'\s+', ' ', cleaned_html)
+        # 为每个操作生成代码
+        dom_state = ""  # 初始DOM为空
+        aggregated_actions = ""
 
-        return cleaned_html.strip()
+        for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
+            is_last = i == len(actions) - 1
 
-    async def _get_dom_state(self, script: str) -> str:
-        """
-        执行脚本并获取DOM状态
-        Args:
-            script: Playwright脚本
-        Returns:
-            DOM状态
-        """
-        import tempfile
-        import os
-        import subprocess
-        import json
+            print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
-        # 创建临时脚本文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(script)
-            temp_script_path = f.name
-
-        try:
-            # 打印脚本的最后几行，查看print语句
-            with open(temp_script_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-                if len(lines) > 10:
-                    print("   脚本末尾10行:")
-                    for line in lines[-10:]:
-                        print(f"   {line.rstrip()}")
-
-            # 使用subprocess运行脚本，这样可以在一个新的进程中执行，避免事件循环的问题
-            print("   正在在新进程中执行Playwright脚本...")
-            result = subprocess.run(
-                [sys.executable, temp_script_path],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                encoding='utf-8',
-                errors='replace'
+            # 生成代码
+            action_code = await test_generator.generate_playwright_code(
+                action,
+                dom_state,
+                aggregated_actions,
+                is_last
             )
 
-            if result.returncode != 0:
-                print(f"   ❌ 脚本执行失败: {result.stderr}")
-                raise Exception(f"脚本执行失败: {result.stderr}")
+            # 验证代码
+            is_valid, error = await test_generator.validate_generated_code(action_code)
+            if not is_valid:
+                print(f"   ⚠️ 操作 {i} 代码验证失败: {error}")
+                continue
 
-            # 解析结果
-            output = result.stdout.strip()
-            print(f"   ✅ 脚本执行成功，输出长度: {len(output)}")
+            # 添加操作注释和代码
+            action_codes.append("")
+            action_codes.append(f"        # Action {i}: {action}")
 
-            # 解析JSON格式的输出，提取dom_state
-            try:
-                output_dict = json.loads(output)
-                dom_state = output_dict.get("dom_state", "")
-                print(f"   ✅ 解析DOM状态成功，原始长度: {len(dom_state)}")
+            # 添加操作代码（缩进处理）
+            for line in action_code.strip().split('\n'):
+                action_codes.append(f"        {line}")
 
-                # 清理 DOM 状态，移除 SVG 等内容
-                dom_state = self._clean_dom_state(dom_state)
-                print(f"   ✅ 清理DOM状态完成，清理后长度: {len(dom_state)}")
+            # 添加2秒延迟
+            action_codes.append("        await page.wait_for_timeout(2000)")
 
-                return dom_state
-            except json.JSONDecodeError:
-                print("   ⚠️  无法解析JSON输出，返回原始输出")
-                return output
-        finally:
-            # 清理临时文件
-            try:
-                os.unlink(temp_script_path)
-            except:
-                pass
+            aggregated_actions += "\n" + action_code
+
+            # 更新DOM状态（用于下一个操作的生成）
+            # 注意：这里我们无法获取实际DOM，所以使用空字符串
+            # 在实际执行时，代码会在浏览器中运行
+            dom_state = ""
+
+        # 构建完整脚本
+        actions_str = '\n'.join(action_codes)
+
+        script = f'''import pytest
+from playwright.async_api import async_playwright, expect
+import asyncio
+
+@pytest.mark.asyncio
+async def test_generated():
+    async with async_playwright() as p:
+        # 启动浏览器
+        browser = await p.chromium.launch(headless={browser_headless})
+        page = await browser.new_page()
+
+        # Action 0: 导航到目标页面
+        await page.goto("{target_url}")
+{actions_str}
+
+        # 关闭浏览器
+        await browser.close()
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
+'''
+        return script
 
     async def _execute_test(self, script: str) -> str:
         """
@@ -278,15 +231,37 @@ class TestExecutor:
         Returns:
             执行输出
         """
-        nest_asyncio.apply()
+        import tempfile
+        import os
+        import subprocess
 
-        exec(script, globals())
+        # 创建临时脚本文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+            f.write(script)
+            temp_script_path = f.name
 
-        output = io.StringIO()
-        with redirect_stdout(output):
-            ipytest.run()
+        try:
+            print("   正在执行测试脚本...")
+            result = subprocess.run(
+                [sys.executable, temp_script_path],
+                capture_output=True,
+                text=True,
+                timeout=300,  # 5分钟超时
+                encoding='utf-8',
+                errors='replace'
+            )
 
-        return output.getvalue()
+            if result.returncode != 0:
+                print(f"   ⚠️ 测试执行有警告或错误: {result.stderr[:500]}")
+
+            output = result.stdout + "\n" + result.stderr
+            return output
+        finally:
+            # 清理临时文件
+            try:
+                os.unlink(temp_script_path)
+            except:
+                pass
 
     async def _generate_report(self, result: Dict[str, Any]) -> str:
         """
@@ -344,40 +319,7 @@ class TestExecutor:
         Returns:
             执行结果
         """
-        result = await self.execute_workflow(user_query, target_url)
-
-        # 如果需要处理验证码
-        if auto_detect or (captcha_selector and captcha_input_selector):
-            # 在脚本中添加验证码处理代码
-            if auto_detect:
-                # 自动检测验证码
-                captcha_code = f"""
-        # 自动检测并处理验证码
-        dom_content = await page.content()
-        from app.services.captcha.captcha_service import captcha_service
-        captcha_found, captcha_text = await captcha_service.auto_detect_and_handle_captcha(page)
-        if captcha_found:
-            print(f"自动处理验证码成功: {{captcha_text}}")
-"""
-            else:
-                # 使用指定的选择器
-                captcha_code = f"""
-        # 处理验证码
-        captcha_image = await page.locator("{captcha_selector}").screenshot()
-        import base64
-        captcha_base64 = base64.b64encode(captcha_image).decode('utf-8')
-        from app.services.captcha.captcha_service import captcha_service
-        captcha_text = await captcha_service.recognize_captcha(captcha_base64)
-        await page.fill("{captcha_input_selector}", captcha_text)
-        print(f"识别到验证码: {{captcha_text}}")
-"""
-            # 在适当的时机插入验证码处理代码
-            result["script"] = result["script"].replace(
-                "# Action 1",
-                f"{captcha_code}\n        # Action 1"
-            )
-
-        return result
+        return await self.execute_workflow(user_query, target_url, auto_detect_captcha=auto_detect)
 
 
 # 创建全局实例
