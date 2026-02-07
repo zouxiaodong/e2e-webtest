@@ -239,9 +239,9 @@ class TestExecutor:
         # 构建操作代码
         action_codes = []
 
-        # 添加导航后的延迟
-        action_codes.append("        # 等待页面加载")
-        action_codes.append("        await page.wait_for_timeout(2000)")
+        # 添加导航后的延迟（使用16空格缩进，与action_codes保持一致）
+        action_codes.append("                # 等待页面加载")
+        action_codes.append("                await page.wait_for_timeout(2000)")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         captcha_handler_code = ""
