@@ -2,7 +2,7 @@ import asyncio
 import io
 import re
 import sys
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from contextlib import redirect_stdout
 from datetime import datetime
 import pytest
@@ -52,18 +52,34 @@ class TestExecutor:
             print(f"目标URL: {target_url}")
             print(f"自动检测验证码: {auto_detect_captcha}")
 
-            # 步骤1: 生成操作步骤
-            print("\n步骤1: 生成操作步骤...")
-            actions = await test_generator.generate_actions(user_query, target_url)
+            # 步骤1: 获取页面内容（截图和HTML）
+            print("\n步骤1: 获取页面内容...")
+            page_content = await test_generator.get_page_content(target_url)
+            print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+            print(f"✅ HTML长度: {len(page_content.get('html', ''))}")
+            print(f"✅ 截图长度: {len(page_content.get('screenshot', ''))}")
+
+            # 步骤2: 分析页面内容
+            print("\n步骤2: 分析页面内容...")
+            page_analysis = await test_generator.analyze_page_content(page_content, user_query)
+            print(f"✅ 页面类型: {page_analysis.get('page_type', 'N/A')}")
+            print(f"✅ 发现 {len(page_analysis.get('forms', []))} 个表单")
+            print(f"✅ 发现 {len(page_analysis.get('buttons', []))} 个按钮")
+
+            # 步骤3: 基于页面分析生成操作步骤
+            print("\n步骤3: 生成操作步骤...")
+            actions = await self._generate_actions_with_context(
+                user_query, target_url, page_analysis
+            )
             result["actions"] = actions
             print(f"✅ 生成了 {len(actions)} 个操作步骤")
             for i, action in enumerate(actions):
                 print(f"   {i+1}. {action}")
 
-            # 步骤2: 生成完整脚本（一次性生成所有操作）
-            print("\n步骤2: 生成完整测试脚本...")
+            # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
+            print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha
+                target_url, actions, auto_detect_captcha, page_content.get('html', '')
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -99,11 +115,84 @@ class TestExecutor:
             print(f"\n错误详情:\n{error_detail}")
             return result
 
+    async def _generate_actions_with_context(
+        self,
+        user_query: str,
+        target_url: str,
+        page_analysis: Dict[str, Any]
+    ) -> List[str]:
+        """
+        基于页面分析结果生成操作步骤
+        Args:
+            user_query: 用户查询
+            target_url: 目标URL
+            page_analysis: 页面分析结果
+        Returns:
+            操作步骤列表
+        """
+        # 构建包含页面信息的prompt
+        forms_info = page_analysis.get('forms', [])
+        buttons_info = page_analysis.get('buttons', [])
+        page_type = page_analysis.get('page_type', 'unknown')
+
+        system_prompt = """你是一个端到端测试专家。你的目标是将通用的业务端到端测试任务分解为更小的、明确定义的操作。"""
+
+        prompt = f"""将以下输入转换为包含"actions"键和原子步骤列表作为值的JSON字典。
+这些步骤将用于生成端到端测试脚本。
+每个操作都应该是一个清晰的、原子步骤，可以转换为代码。
+尽量生成完成用户测试意图所需的最少操作数量。
+第一个操作必须始终是导航到目标URL。
+最后一个操作应该始终是断言测试的预期结果。
+不要在这个JSON结构之外添加任何额外的字符、注释或解释。只输出JSON结果。
+
+重要提示：
+1. 基于页面实际元素生成操作步骤
+2. 如果页面包含验证码输入框，请在登录操作前添加填写验证码的步骤
+3. 使用页面中实际存在的表单字段名称
+
+页面信息：
+- 页面类型: {page_type}
+- 表单: {forms_info}
+- 按钮: {buttons_info}
+
+示例:
+输入: "测试网站的登录流程"
+输出: {{
+    "actions": [
+        "通过URL导航到登录页面。",
+        "定位并在'Email'输入框中输入有效的邮箱",
+        "在'Password'输入框中输入有效的密码",
+        "如果有验证码输入框，填写验证码",
+        "点击'Login'按钮提交凭据",
+        "通过期望网站头部出现正确的用户名来验证用户已登录。"
+    ]
+}}
+
+目标URL: {target_url}
+用户查询: {user_query}
+输出:"""
+
+        response = await bailian_client.generate_text(prompt, system_prompt)
+
+        # 解析JSON响应
+        import json
+        try:
+            result = json.loads(response)
+            return result.get("actions", [])
+        except json.JSONDecodeError:
+            # 如果解析失败，返回默认操作
+            return [
+                f"通过URL导航到 {target_url}",
+                user_query,
+                "验证测试已成功完成"
+            ]
+
     async def _generate_complete_script(
         self,
         target_url: str,
         actions: list,
-        auto_detect_captcha: bool
+        auto_detect_captcha: bool,
+        html_content: str = ""
     ) -> str:
         """
         生成完整的测试脚本（一次性生成所有操作）
@@ -137,27 +226,66 @@ class TestExecutor:
         action_codes.append("        await page.wait_for_timeout(2000)")
 
         # 如果需要自动检测验证码，添加验证码处理代码
+        captcha_handler_code = ""
         if auto_detect_captcha:
-            action_codes.append("")
-            action_codes.append("        # 自动检测并处理验证码")
-            action_codes.append("        try:")
-            action_codes.append("            # 检查是否存在验证码图片")
-            action_codes.append("            captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
-            action_codes.append("            if await captcha_img.is_visible(timeout=3000):")
-            action_codes.append("                print('检测到验证码')")
-            action_codes.append("                # 截取验证码图片")
-            action_codes.append("                captcha_bytes = await captcha_img.screenshot()")
-            action_codes.append("                import base64")
-            action_codes.append("                captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
-            action_codes.append("                # 这里需要调用验证码识别服务")
-            action_codes.append("                # 暂时跳过验证码填写")
-            action_codes.append("                print('验证码识别功能需要在主进程中实现')")
-            action_codes.append("        except:")
-            action_codes.append("            pass  # 没有验证码")
-            action_codes.append("")
+            # 获取LLM配置
+            from ...core.config import settings
+            api_key = settings.BAILIAN_API_KEY
+            base_url = settings.BAILIAN_BASE_URL
+            vl_model = settings.BAILIAN_VL_MODEL
+
+            captcha_handler_code = f'''
+        # 自动检测并处理验证码
+        try:
+            # 检查是否存在验证码图片
+            captcha_img = page.locator('img[src*="captcha"], img[id*="captcha"], .captcha img').first
+            if await captcha_img.is_visible(timeout=3000):
+                print('检测到验证码')
+                # 截取验证码图片
+                captcha_bytes = await captcha_img.screenshot()
+                import base64
+                captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')
+
+                # 调用LLM识别验证码
+                import openai
+                client = openai.OpenAI(api_key="{api_key}", base_url="{base_url}")
+
+                response = client.chat.completions.create(
+                    model="{vl_model}",
+                    messages=[
+                        {{
+                            "role": "system",
+                            "content": "你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。"
+                        }},
+                        {{
+                            "role": "user",
+                            "content": [
+                                {{"type": "text", "text": "请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。"}},
+                                {{"type": "image_url", "image_url": {{"url": f"data:image/png;base64,{{captcha_base64}}"}}}}
+                            ]
+                        }}
+                    ],
+                    temperature=0.0,
+                    max_tokens=50
+                )
+
+                captcha_text = response.choices[0].message.content.strip()
+                print(f'识别到验证码: {{captcha_text}}')
+
+                # 查找验证码输入框并填写
+                captcha_input = page.locator('input[name*="captcha"], input[id*="captcha"], input[placeholder*="验证码"]').first
+                if await captcha_input.is_visible(timeout=3000):
+                    await captcha_input.fill(captcha_text)
+                    print('验证码已填写')
+        except Exception as e:
+            print(f'验证码处理失败: {{e}}')
+            pass  # 没有验证码或处理失败
+'''
+            action_codes.append(captcha_handler_code)
 
         # 为每个操作生成代码
-        dom_state = ""  # 初始DOM为空
+        # 使用获取到的HTML内容作为DOM状态
+        dom_state = html_content[:5000] if html_content else ""  # 限制长度避免超出token限制
         aggregated_actions = ""
 
         for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
@@ -192,10 +320,8 @@ class TestExecutor:
 
             aggregated_actions += "\n" + action_code
 
-            # 更新DOM状态（用于下一个操作的生成）
-            # 注意：这里我们无法获取实际DOM，所以使用空字符串
-            # 在实际执行时，代码会在浏览器中运行
-            dom_state = ""
+            # DOM状态保持不变（使用初始HTML）
+            # 因为我们在生成代码时无法获取执行后的实际DOM
 
         # 构建完整脚本
         actions_str = '\n'.join(action_codes)

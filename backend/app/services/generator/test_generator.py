@@ -668,6 +668,8 @@ class TestGenerator:
 2. 在填写表单字段后，必须添加 `await page.wait_for_timeout(2000)` 再执行下一个操作
 3. 在点击按钮后，等待页面响应或元素出现
 4. 操作之间必须有明显的延迟，避免操作过快
+5. 如果操作涉及"登录"、"提交"、"点击按钮"等，且<DOM>中包含验证码输入框（如input[name*="captcha"]、input[id*="captcha"]或placeholder包含"验证码"），请在点击登录按钮之前先填写验证码字段
+6. 验证码字段通常在密码字段附近，查找包含"captcha"、"验证码"、"code"等关键词的输入框
 
 ---
 <Previous Actions>:
