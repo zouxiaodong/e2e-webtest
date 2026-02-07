@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import sys
 import logging
 import json
@@ -183,11 +183,6 @@ async def generate_scenario_cases(
             )
 
             # 生成测试脚本
-            execution_result = await test_executor.execute_workflow(
-                case_data["user_query"],
-                scenario.target_url
-            )
-
             # 创建测试用例
             # 将 expected_result 转换为 JSON 字符串
             expected_result = case_data.get("expected_result")
@@ -203,10 +198,10 @@ async def generate_scenario_cases(
                 test_data=case_data.get("test_data", {}),
                 expected_result=expected_result,
                 actions=actions,
-                script=execution_result.get("script"),
+                script="",  # Placeholder script
                 priority=case_data.get("priority", "P1"),
                 case_type=case_data.get("case_type", "positive"),
-                status="completed" if execution_result.get("status") == "success" else "failed"
+                status="generated"  # Generated but not executed
             )
             db.add(db_case)
             generated_cases.append(db_case)

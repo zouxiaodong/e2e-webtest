@@ -1,8 +1,8 @@
-import axios from 'axios'
+﻿import axios from 'axios'
 
 const api = axios.create({
   baseURL: '/api',
-  timeout: 300000
+  timeout: 600000
 })
 
 // 请求拦截器
