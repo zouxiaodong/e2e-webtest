@@ -4,10 +4,16 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, t
 from datetime import datetime
 from .config import settings
 
-# 导入所有模型以确保它们被注册
-from ..models.test_case import TestScenario, TestCase, TestReport
+# 从 models 导入基类（避免循环导入）
+from ..models.test_case import Base as BaseModel
 from ..models.global_config import GlobalConfig
 from ..models.test_session import TestSession
+
+# 使用导入的基类
+Base = BaseModel
+
+# 导入所有模型以确保它们被注册到 Base.metadata
+from ..models.test_case import TestScenario, TestCase, TestReport
 
 # 创建异步数据库引擎
 engine = create_async_engine(

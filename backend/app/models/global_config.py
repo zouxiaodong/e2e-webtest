@@ -1,6 +1,6 @@
 ﻿from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
 from datetime import datetime
-from ..core.database import Base
+from .test_case import Base
 
 
 class GlobalConfig(Base):

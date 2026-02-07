@@ -1,89 +1,57 @@
-# AI 驱动的端到端测试平台
+﻿# AI 驱动的端到端测试平台
 
-一个基于人工智能的自动化测试平台，使用自然语言描述测试需求，自动生成和执行端到端测试。
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-green.svg)](https://fastapi.tiangolo.com/)
+[![Vue 3](https://img.shields.io/badge/Vue-3.5-42b883.svg)](https://vuejs.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## 功能特性
+> 基于百练平台大模型和 Playwright 的智能 E2E 测试自动化平台
 
-- ✨ **一句话生成测试** - 使用自然语言描述测试需求，AI 自动生成测试用例
-- 🔍 **智能验证码识别** - 基于百练平台视觉大模型（qwen-vl-plus），自动识别和处理验证码
-- 🎭 **浏览器自动化** - 使用 Playwright 进行真实的浏览器操作模拟
-- 📊 **自动生成报告** - 执行测试后自动生成详细的测试报告
-- 🎨 **美观的 Web 界面** - 基于 Vue3 + Element Plus 的现代化管理界面
-- 📝 **用例管理** - 完整的测试用例 CRUD 功能
+## 📖 项目简介
 
-## 技术栈
+这是一个创新的端到端（E2E）测试自动化平台，利用百练平台的大模型能力，让用户通过自然语言描述测试需求，自动生成、执行测试用例，并提供详细的测试报告。
 
-### 后端
-- **FastAPI** - 现代化的 Python Web 框架
-- **LangChain** - LLM 应用开发框架
-- **LangGraph** - 图工作流编排
-- **Playwright** - 浏览器自动化
-- **SQLAlchemy** - ORM 框架
-- **PostgreSQL** - 关系型数据库
+### 核心特性
 
-### 前端
-- **Vue 3** - 渐进式 JavaScript 框架
-- **Element Plus** - Vue 3 组件库
-- **Vite** - 下一代前端构建工具
-- **Axios** - HTTP 客户端
+- 🤖 **AI 驱动** - 使用百练平台通义千问模型自动生成测试用例
+- 🎯 **一句话生成** - 用自然语言描述需求，AI 自动生成 1-N 个测试用例
+- 🔄 **场景管理** - 支持测试场景与用例的层级管理
+- 🔐 **智能验证码识别** - 使用 qwen-vl-plus 模型自动识别验证码
+- 🌐 **Web 界面** - 现代化的 Vue3 + Element Plus 管理界面
+- 💾 **会话复用** - 支持登录会话保存和复用，提高测试效率
+- 📊 **详细报告** - 自动生成 Markdown 格式的测试报告
+- ⚙️ **全局配置** - 统一管理 URL、用户名、密码等配置
 
-### AI 服务
-- **百练平台** - 通义千问大模型
-- **qwen-plus** - 文本生成模型
-- **qwen-vl-plus** - 视觉识别模型（验证码识别）
-
-## 项目结构
-
-```
-e2etest/
-├── backend/                 # 后端项目
-│   ├── app/
-│   │   ├── api/            # API 路由
-│   │   ├── core/           # 核心配置
-│   │   ├── models/         # 数据库模型
-│   │   ├── schemas/        # Pydantic schemas
-│   │   ├── services/       # 业务逻辑
-│   │   │   ├── llm/        # 百练平台集成
-│   │   │   ├── captcha/    # 验证码识别
-│   │   │   ├── generator/  # 测试用例生成
-│   │   │   └── executor/   # 测试执行
-│   │   └── main.py         # FastAPI 应用入口
-│   ├── requirements.txt    # Python 依赖
-│   └── .env               # 环境配置
-├── frontend/               # 前端项目
-│   ├── src/
-│   │   ├── api/           # API 调用
-│   │   ├── components/    # 组件
-│   │   ├── views/         # 页面
-│   │   ├── router/        # 路由配置
-│   │   ├── App.vue        # 根组件
-│   │   └── main.js        # 入口文件
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.js
-└── README.md
-```
-
-## 快速开始
+## 🚀 快速开始
 
 ### 环境要求
 
 - Python 3.11+
 - Node.js 18+
-- PostgreSQL 13+
+- MySQL 5.7+
+- Playwright 浏览器
 
-### 1. 安装后端依赖
+### 安装步骤
 
-```bash
+#### 1. 克隆项目
+
+`ash
+git clone <repository-url>
+cd e2etest
+`
+
+#### 2. 配置环境变量
+
+复制后端环境变量模板：
+
+`ash
 cd backend
-pip install -r requirements.txt
-```
+cp .env.example .env
+`
 
-### 2. 配置环境变量
+编辑 .env 文件，填入真实配置：
 
-编辑 `backend/.env` 文件：
-
-```env
+`env
 # 百练平台配置
 BAILIAN_API_KEY=your_api_key_here
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
@@ -91,171 +59,252 @@ BAILIAN_LLM_MODEL=qwen-plus
 BAILIAN_VL_MODEL=qwen-vl-plus
 
 # 数据库配置
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/e2e_test_db
+DATABASE_URL=mysql+aiomysql://username:password@host:port/database
 
-# 应用配置
-APP_NAME=AI-Driven E2E Testing Platform
-APP_VERSION=1.0.0
-DEBUG=True
+# 其他配置...
+`
 
-# CORS 配置
-CORS_ORIGINS=http://localhost:5173,http://localhost:5174
+#### 3. 安装后端依赖
 
-# 浏览器配置
-BROWSER_HEADLESS=True
-BROWSER_TIMEOUT=30000
-```
+`ash
+cd backend
+pip install -r requirements.txt
 
-### 3. 初始化数据库
-
-```bash
-# 创建 PostgreSQL 数据库
-createdb e2e_test_db
-
-# 数据库表会在应用启动时自动创建
-```
-
-### 4. 安装 Playwright 浏览器
-
-```bash
+# 安装 Playwright 浏览器
 playwright install chromium
-```
+`
 
-### 5. 启动后端服务
+#### 4. 创建数据库
 
-```bash
+`ash
+# 创建数据库
+mysql -u root -p
+CREATE DATABASE e2etest CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+EXIT;
+`
+
+#### 5. 启动后端服务
+
+`ash
 cd backend
 python -m app.main
-```
+`
 
-后端服务将在 `http://localhost:8000` 启动
+后端服务将在 http://localhost:8000 启动
 
-API 文档：`http://localhost:8000/docs`
+#### 6. 安装前端依赖
 
-### 6. 安装前端依赖
-
-```bash
+`ash
 cd frontend
 npm install
-```
+`
 
-### 7. 启动前端服务
+#### 7. 启动前端服务
 
-```bash
+`ash
 npm run dev
-```
+`
 
-前端服务将在 `http://localhost:5173` 启动
+前端服务将在 http://localhost:5174 启动
 
-## 使用指南
+## 📚 使用指南
 
-### 1. 快速生成测试用例
+### 快速生成测试用例
 
-1. 访问 `http://localhost:5173`
+1. 访问前端页面 http://localhost:5174
 2. 点击"快速生成"菜单
 3. 填写目标 URL 和测试需求
-4. 如果目标网站有验证码，启用验证码处理并填写选择器
-5. 点击"生成测试用例"按钮
-6. 等待 AI 生成测试用例和执行报告
+4. 选择生成策略：
+   - 仅正向测试（1个用例）
+   - 基础覆盖（3个用例）
+   - 全面测试（5个用例）
+5. 可选：开启"自动识别验证码"
+6. 点击"生成测试用例"
 
-### 2. 管理测试用例
+### 使用全局配置
 
-1. 点击"测试用例"菜单
-2. 点击"新建测试用例"创建新用例
-3. 点击"生成"按钮生成测试脚本
-4. 点击"执行"按钮运行测试
-5. 点击"查看"查看详细信息和报告
+1. 访问"全局配置"页面
+2. 设置默认 URL、用户名、密码等
+3. 保存配置
+4. 在快速生成时，开启"使用全局配置"
 
-### 3. 验证码处理
+### 管理测试场景
 
-平台支持自动处理验证码：
+1. 访问"测试场景"页面
+2. 创建新场景，填写场景描述
+3. 选择登录配置：
+   - 不需要登录
+   - 执行登录
+   - 使用全局会话
+   - 使用指定会话
+4. 生成和执行测试用例
 
-- **验证码选择器**：验证码图片元素的 CSS 选择器，例如 `#captcha img`
-- **输入框选择器**：验证码输入框的 CSS 选择器，例如 `#captcha-input`
+## 🏗️ 项目结构
 
-系统会自动截取验证码图片，使用 qwen-vl-plus 模型识别内容，并填入输入框。
+`
+e2etest/
+├── backend/                    # 后端服务
+│   ├── app/
+│   │   ├── api/               # API 路由
+│   │   │   ├── test_cases.py  # 测试用例 API
+│   │   │   ├── scenarios.py   # 场景管理 API
+│   │   │   ├── configs.py     # 全局配置 API
+│   │   │   └── sessions.py    # 会话管理 API
+│   │   ├── core/              # 核心配置
+│   │   │   ├── config.py      # 配置管理
+│   │   │   ├── database.py    # 数据库配置
+│   │   │   └── llm_logger.py  # LLM 日志
+│   │   ├── models/            # 数据模型
+│   │   │   ├── test_case.py   # 场景和用例模型
+│   │   │   ├── global_config.py # 全局配置模型
+│   │   │   └── test_session.py # 会话模型
+│   │   ├── schemas/           # Pydantic schemas
+│   │   │   ├── test_case.py
+│   │   │   ├── global_config.py
+│   │   │   └── ...
+│   │   ├── services/          # 业务逻辑
+│   │   │   ├── llm/          # LLM 集成
+│   │   │   │   └── bailian_client.py
+│   │   │   ├── captcha/      # 验证码服务
+│   │   │   ├── generator/    # 测试生成引擎
+│   │   │   ├── executor/     # 测试执行引擎
+│   │   │   └── session/      # 会话管理
+│   │   └── main.py           # 应用入口
+│   ├── logs/                  # 日志目录
+│   ├── requirements.txt        # Python 依赖
+│   └── .env                   # 环境变量（不提交）
+├── frontend/                   # 前端应用
+│   ├── src/
+│   │   ├── api/               # API 调用
+│   │   ├── components/        # 公共组件
+│   │   ├── views/             # 页面组件
+│   │   ├── router/            # 路由配置
+│   │   ├── utils/             # 工具函数
+│   │   ├── App.vue            # 根组件
+│   │   └── main.js            # 入口文件
+│   ├── package.json           # Node.js 依赖
+│   └── vite.config.js         # Vite 配置
+├── README.md                   # 项目文档
+├── IMPROVEMENTS.md             # 改进说明
+├── SESSION_MANAGEMENT.md       # 会话管理方案
+└── LLM_LOGS.md                 # LLM 日志说明
+`
 
-## API 文档
+## 🔧 配置说明
 
-启动后端服务后，访问 `http://localhost:8000/docs` 查看完整的 API 文档。
+### 百练平台配置
 
-### 主要 API 端点
+在 ackend/.env 中配置：
 
-- `POST /api/test-cases/quick-generate` - 快速生成测试用例
-- `POST /api/test-cases/quick-generate-with-captcha` - 快速生成带验证码的测试用例
-- `GET /api/test-cases` - 获取测试用例列表
-- `POST /api/test-cases` - 创建测试用例
-- `POST /api/test-cases/{id}/generate` - 生成测试脚本
-- `POST /api/test-cases/{id}/execute` - 执行测试
+`env
+BAILIAN_API_KEY=your_api_key
+BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+BAILIAN_LLM_MODEL=qwen-plus          # 文本生成模型
+BAILIAN_VL_MODEL=qwen-vl-plus        # 视觉识别模型
+`
 
-## 工作原理
+### 数据库配置
 
-### 测试生成流程
+`env
+DATABASE_URL=mysql+aiomysql://username:password@host:port/database
+`
 
-1. **指令解析** - 将用户的自然语言查询转换为结构化的操作步骤
-2. **代码生成** - 为每个操作步骤生成 Playwright 代码
-3. **DOM 分析** - 执行代码获取当前页面状态
-4. **迭代生成** - 基于页面状态生成下一个操作的代码
-5. **测试执行** - 运行完整的测试脚本
-6. **报告生成** - 生成详细的测试报告
+**注意：** 密码中的特殊字符（如 @, #, !）需要进行 URL 编码：
+- @ → %40
+- # → %23
+- ! → %21
 
-### 验证码处理流程
+示例：密码 E2e123!@# 编码为 E2e123!%40%23
 
-1. 截取验证码元素图片
-2. 将图片转换为 base64 编码
-3. 调用 qwen-vl-plus 模型识别验证码内容
-4. 将识别结果填入输入框
+### 浏览器配置
 
-## 注意事项
+`env
+BROWSER_HEADLESS=True          # 无头模式（关闭后可看到浏览器）
+BROWSER_TIMEOUT=30000          # 超时时间（毫秒）
+`
 
-1. **Windows 系统特殊处理**
-   - 在 Windows 上运行 Playwright 可能需要特殊配置
-   - 参考：https://github.com/microsoft/playwright-python/issues/178#issuecomment-1302869947
+## 📖 更多文档
 
-2. **验证码识别**
-   - 验证码识别准确率取决于验证码的复杂程度
-   - 简单的数字/字母验证码识别率较高
-   - 复杂的滑动验证码可能需要其他方案
+- [改进说明](IMPROVEMENTS.md) - 专业测试场景和用例改进
+- [会话管理](SESSION_MANAGEMENT.md) - 登录会话复用方案
+- [LLM 日志](backend/LLM_LOGS.md) - LLM 交互日志说明
+- [API 文档](http://localhost:8000/docs) - Swagger API 文档
 
-3. **API 调用限制**
-   - 百练平台 API 有调用频率限制
-   - 建议合理控制测试生成的频率
+## 🤝 贡献指南
 
-4. **浏览器资源**
-   - 每个测试用例执行会启动新的浏览器实例
-   - 测试完成后浏览器会自动关闭
+欢迎贡献代码！请遵循以下步骤：
 
-## 常见问题
+1. Fork 本仓库
+2. 创建特性分支 (git checkout -b feature/AmazingFeature)
+3. 提交更改 (git commit -m 'Add some AmazingFeature')
+4. 推送到分支 (git push origin feature/AmazingFeature)
+5. 提交 Pull Request
 
-### Q: 如何获取百练平台 API Key？
+## 📄 许可证
 
-A: 访问阿里云百练平台（https://bailian.console.aliyun.com/）注册并创建 API Key。
+本项目采用 MIT 许可证。详情请参阅 [LICENSE](LICENSE) 文件。
 
-### Q: 数据库连接失败怎么办？
+## ❓ 常见问题
 
-A: 检查 `backend/.env` 中的 `DATABASE_URL` 配置是否正确，确保 PostgreSQL 服务正在运行。
+### Q: Playwright 在 Windows 上启动失败？
 
-### Q: 前端无法连接后端怎么办？
+A: 请确保已安装 Playwright 浏览器：
 
-A: 检查后端服务是否正常启动，查看 `frontend/vite.config.js` 中的代理配置。
+`ash
+playwright install chromium
+`
+
+如果仍有问题，请检查事件循环策略（代码中已处理）。
+
+### Q: 如何查看 LLM 交互日志？
+
+A: 日志文件位于 ackend/logs/llm_interactions.log，使用以下命令查看：
+
+`ash
+# 查看所有日志
+cat backend/logs/llm_interactions.log
+
+# 实时查看
+tail -f backend/logs/llm_interactions.log
+`
 
 ### Q: 验证码识别失败怎么办？
 
-A: 检查验证码选择器是否正确，确保验证码元素在页面中可见。
+A: 检查以下几点：
+1. 确保 qwen-vl-plus 模型配置正确
+2. 检查验证码图片是否清晰可见
+3. 查看后端日志了解详细错误信息
 
-## 开发计划
+### Q: 如何提高测试效率？
 
-- [ ] 支持更多浏览器（Firefox、Safari）
-- [ ] 支持测试用例导入/导出
-- [ ] 支持测试用例定时执行
-- [ ] 支持测试结果对比和历史记录
-- [ ] 支持多用户和权限管理
-- [ ] 支持测试用例模板
+A: 使用会话复用功能：
+1. 创建登录场景并保存会话
+2. 其他场景选择"使用全局会话"或"使用指定会话"
+3. 自动跳过登录步骤
 
-## 许可证
+### Q: Token 使用量如何监控？
 
-MIT License
+A: 查看后端日志文件，每次 LLM 调用都会记录：
+- 估算的输入 tokens
+- 估算的输出 tokens
+- 实际的 token 使用情况（如果 API 返回）
 
-## 联系方式
+## 📞 联系方式
 
-如有问题或建议，请提交 Issue。
+如有问题或建议，请通过以下方式联系：
+
+- 提交 Issue
+- 发送邮件
+- 加入讨论组
+
+## 🙏 致谢
+
+- [百练平台](https://www.aliyun.com/product/bailian) - 提供强大的大模型服务
+- [Playwright](https://playwright.dev/) - 现代化的浏览器自动化工具
+- [FastAPI](https://fastapi.tiangolo.com/) - 高性能的 Python Web 框架
+- [Vue 3](https://vuejs.org/) - 渐进式 JavaScript 框架
+- [Element Plus](https://element-plus.org/) - Vue 3 组件库
+
+---
+
+**Made with ❤️ using AI**

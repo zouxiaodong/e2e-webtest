@@ -2,7 +2,10 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, F
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
-from ..core.database import Base
+from sqlalchemy.orm import declarative_base
+
+# 创建基类（避免循环导入）
+Base = declarative_base()
 
 
 class TestCasePriority(enum.Enum):

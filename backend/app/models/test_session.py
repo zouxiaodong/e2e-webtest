@@ -1,7 +1,7 @@
 ﻿from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from datetime import datetime
-from ..core.database import Base
+from .test_case import Base
 
 
 class TestSession(Base):
