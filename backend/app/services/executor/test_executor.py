@@ -1,6 +1,7 @@
 import asyncio
 import io
 import re
+import sys
 from typing import Dict, Any, Optional
 from playwright.async_api import async_playwright, Page, Browser
 from contextlib import redirect_stdout
@@ -8,6 +9,11 @@ from datetime import datetime
 import pytest
 import ipytest
 import nest_asyncio
+
+# Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print(f"✅ 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程")
 
 from ..generator.test_generator import test_generator
 from ..captcha.captcha_service import captcha_service
@@ -47,34 +53,43 @@ class TestExecutor:
         }
 
         try:
+            print("\n===== 开始执行测试工作流 =====")
+            print(f"用户查询: {user_query}")
+            print(f"目标URL: {target_url}")
+            
             # Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
             if sys.platform == 'win32':
                 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+                print("✅ 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程")
 
             # 步骤1: 生成操作步骤
-            print("步骤1: 生成操作步骤...")
+            print("\n步骤1: 生成操作步骤...")
             actions = await test_generator.generate_actions(user_query, target_url)
             result["actions"] = actions
-            print(f"生成了 {len(actions)} 个操作步骤")
+            print(f"✅ 生成了 {len(actions)} 个操作步骤")
+            for i, action in enumerate(actions):
+                print(f"   {i+1}. {action}")
 
             # 步骤2: 初始化脚本
-            print("步骤2: 初始化Playwright脚本...")
+            print("\n步骤2: 初始化Playwright脚本...")
             script = await test_generator.generate_initial_script(target_url)
+            print("✅ 初始化Playwright脚本完成")
 
             # 步骤3: 启动浏览器并获取初始DOM
-            print("步骤3: 启动浏览器并获取初始DOM...")
+            print("\n步骤3: 启动浏览器并获取初始DOM...")
+            print("   正在启动浏览器...")
             self.dom_state = await self._get_dom_state(script)
-            print(f"获取到DOM，长度: {len(self.dom_state)}")
+            print(f"✅ 获取到DOM，长度: {len(self.dom_state)}")
 
             # 步骤4: 为每个操作生成代码
-            print("步骤4: 为每个操作生成代码...")
+            print("\n步骤4: 为每个操作生成代码...")
             current_action = 1  # Action 0 是导航
 
             while current_action < len(actions):
                 action = actions[current_action]
                 is_last = current_action == len(actions) - 1
 
-                print(f"正在生成操作 {current_action}/{len(actions) - 1}: {action}")
+                print(f"\n   正在生成操作 {current_action}/{len(actions) - 1}: {action}")
 
                 # 生成代码
                 action_code = await test_generator.generate_playwright_code(
@@ -83,6 +98,7 @@ class TestExecutor:
                     self.aggregated_actions,
                     is_last
                 )
+                print(f"   ✅ 生成代码完成")
 
                 # 验证代码
                 is_valid, error = await test_generator.validate_generated_code(action_code)
@@ -90,42 +106,102 @@ class TestExecutor:
                     result["status"] = "error"
                     result["error"] = f"操作 {current_action} 代码验证失败: {error}"
                     result["script"] = script
+                    print(f"   ❌ 操作 {current_action} 代码验证失败: {error}")
                     return result
+                print(f"   ✅ 代码验证通过")
 
                 # 插入代码到脚本
                 script = test_generator.insert_code_into_script(script, action_code, current_action)
                 self.aggregated_actions += "\n " + action_code
+                print(f"   ✅ 代码插入完成")
 
                 # 执行脚本获取新DOM
+                print("   正在执行脚本获取新DOM...")
                 self.dom_state = await self._get_dom_state(script)
+                print(f"   ✅ 获取到新DOM，长度: {len(self.dom_state)}")
                 current_action += 1
 
             # 步骤5: 生成测试名称
-            print("步骤5: 生成测试名称...")
+            print("\n步骤5: 生成测试名称...")
             test_name = await bailian_client.generate_test_name(user_query, actions)
             result["test_name"] = test_name
+            print(f"✅ 生成测试名称: {test_name}")
 
             # 步骤6: 完成脚本
-            print("步骤6: 完成脚本...")
+            print("\n步骤6: 完成脚本...")
             final_script = await test_generator.finalize_script(script, test_name)
             result["script"] = final_script
+            print("✅ 完成脚本")
 
             # 步骤7: 执行测试
-            print("步骤7: 执行测试...")
+            print("\n步骤7: 执行测试...")
+            print("   正在执行测试...")
             execution_output = await self._execute_test(final_script)
             result["execution_output"] = execution_output
+            print("✅ 测试执行完成")
 
             # 步骤8: 生成报告
-            print("步骤8: 生成报告...")
+            print("\n步骤8: 生成报告...")
             report = await self._generate_report(result)
             result["report"] = report
+            print("✅ 生成报告完成")
 
+            print("\n===== 测试工作流执行完成 =====")
             return result
 
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
             result["status"] = "error"
             result["error"] = str(e)
+            print(f"\n❌ 执行过程中出现错误: {str(e)}")
+            print(f"\n错误详情:\n{error_detail}")
             return result
+
+    def _clean_dom_state(self, html: str) -> str:
+        """
+        清理 DOM 状态，移除 SVG、CSS、JavaScript 等无关内容
+        Args:
+            html: 原始 HTML
+        Returns:
+            清理后的 HTML
+        """
+        from lxml.html.clean import Cleaner
+        import lxml.html
+
+        # 使用 lxml 的 Cleaner 来清理 HTML
+        cleaner = Cleaner(
+            javascript=True,  # Remove script tags and js attributes
+            style=True,       # Remove style tags
+            inline_style=True, # Remove inline style attributes
+            comments=True,    # Remove comments
+            safe_attrs_only=True,  # Only keep safe attributes
+            forms=False,      # Keep form tags (needed for testing)
+            page_structure=False,  # Keep basic page structure
+        )
+
+        # 清理 HTML
+        cleaned_html = cleaner.clean_html(html)
+
+        # 转换为字符串
+        if isinstance(cleaned_html, bytes):
+            cleaned_html = cleaned_html.decode('utf-8')
+
+        # 移除 SVG 内容
+        import re
+        # 移除 <svg>...</svg> 标签及其内容
+        cleaned_html = re.sub(r'<svg[^>]*>.*?</svg>', '', cleaned_html, flags=re.DOTALL | re.IGNORECASE)
+        # 移除 <symbol>...</symbol> 标签及其内容
+        cleaned_html = re.sub(r'<symbol[^>]*>.*?</symbol>', '', cleaned_html, flags=re.DOTALL | re.IGNORECASE)
+        # 移除 <path>...</path> 标签
+        cleaned_html = re.sub(r'<path[^/]*/?>', '', cleaned_html, flags=re.IGNORECASE)
+        # 移除 <use>...</use> 标签
+        cleaned_html = re.sub(r'<use[^/]*/?>', '', cleaned_html, flags=re.IGNORECASE)
+
+        # 移除多余空格
+        cleaned_html = re.sub(r'\s+', ' ', cleaned_html)
+
+        return cleaned_html.strip()
 
     async def _get_dom_state(self, script: str) -> str:
         """
@@ -135,11 +211,64 @@ class TestExecutor:
         Returns:
             DOM状态
         """
-        # 直接在当前事件循环中执行脚本
-        exec_namespace = {}
-        exec(script, exec_namespace)
-        dom_content = await exec_namespace["generated_script_run"]()
-        return dom_content
+        import tempfile
+        import os
+        import subprocess
+        import json
+
+        # 创建临时脚本文件
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+            f.write(script)
+            temp_script_path = f.name
+
+        try:
+            # 打印脚本的最后几行，查看print语句
+            with open(temp_script_path, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+                if len(lines) > 10:
+                    print("   脚本末尾10行:")
+                    for line in lines[-10:]:
+                        print(f"   {line.rstrip()}")
+
+            # 使用subprocess运行脚本，这样可以在一个新的进程中执行，避免事件循环的问题
+            print("   正在在新进程中执行Playwright脚本...")
+            result = subprocess.run(
+                [sys.executable, temp_script_path],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                encoding='utf-8',
+                errors='replace'
+            )
+
+            if result.returncode != 0:
+                print(f"   ❌ 脚本执行失败: {result.stderr}")
+                raise Exception(f"脚本执行失败: {result.stderr}")
+
+            # 解析结果
+            output = result.stdout.strip()
+            print(f"   ✅ 脚本执行成功，输出长度: {len(output)}")
+
+            # 解析JSON格式的输出，提取dom_state
+            try:
+                output_dict = json.loads(output)
+                dom_state = output_dict.get("dom_state", "")
+                print(f"   ✅ 解析DOM状态成功，原始长度: {len(dom_state)}")
+
+                # 清理 DOM 状态，移除 SVG 等内容
+                dom_state = self._clean_dom_state(dom_state)
+                print(f"   ✅ 清理DOM状态完成，清理后长度: {len(dom_state)}")
+
+                return dom_state
+            except json.JSONDecodeError:
+                print("   ⚠️  无法解析JSON输出，返回原始输出")
+                return output
+        finally:
+            # 清理临时文件
+            try:
+                os.unlink(temp_script_path)
+            except:
+                pass
 
     async def _execute_test(self, script: str) -> str:
         """

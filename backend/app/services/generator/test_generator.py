@@ -1,4 +1,4 @@
-﻿from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from playwright.async_api import async_playwright
@@ -112,27 +112,34 @@ class TestGenerator:
                 break
             
             # 创建临时脚本文件
-            script = f"""import asyncio
-from playwright.async_api import async_playwright
-import base64
-import json
-
-async def fetch_page():
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless={browser_headless})
-        page = await browser.new_page()
-        await page.goto("{target_url}", wait_until="networkidle", timeout=30000)
-        html = await page.content()
-        screenshot = await page.screenshot(full_page=False)
-        title = await page.title()
-        await browser.close()
-        return html, base64.b64encode(screenshot).decode('utf-8'), title
-
-if __name__ == "__main__":
-    result = asyncio.run(fetch_page())
-    html, screenshot, title = result
-    print(json.dumps({{"html": html, "screenshot": f"data:image/png;base64,{{screenshot}}", "title": title}}))
-    """
+            # 构建脚本内容，避免f-string的格式说明符冲突
+            script_lines = [
+                "import asyncio",
+                "import sys",
+                "from playwright.async_api import async_playwright",
+                "import base64",
+                "import json",
+                "",
+                "async def fetch_page():",
+                "    async with async_playwright() as p:",
+                f"        browser = await p.chromium.launch(headless={browser_headless})",
+                "        page = await browser.new_page()",
+                f"        await page.goto(\"{target_url}\", wait_until=\"networkidle\", timeout=30000)",
+                "        html = await page.content()",
+                "        screenshot = await page.screenshot(full_page=False)",
+                "        title = await page.title()",
+                "        await browser.close()",
+                "        return html, base64.b64encode(screenshot).decode('utf-8'), title",
+                "",
+                "if __name__ == \"__main__\":",
+                "    # 设置stdout的编码为utf-8，避免Unicode编码错误",
+                "    sys.stdout.reconfigure(encoding='utf-8')",
+                "    result = asyncio.run(fetch_page())",
+                "    html, screenshot, title = result",
+                "    print(json.dumps({'html': html, 'screenshot': 'data:image/png;base64,' + screenshot, 'title': title}, ensure_ascii=False))",
+                ""
+            ]
+            script = "\n".join(script_lines)
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
                 f.write(script)
@@ -656,6 +663,12 @@ if __name__ == "__main__":
 你的输出应该只是一个满足操作的原子Python Playwright代码。
 不要将代码包含在反引号或任何Markdown格式中；只输出Python代码本身！
 
+重要提示：
+1. 在每次操作（如点击、输入）后添加延迟，使用 `await page.wait_for_timeout(2000)` 模拟人工操作（2秒延迟）
+2. 在填写表单字段后，必须添加 `await page.wait_for_timeout(2000)` 再执行下一个操作
+3. 在点击按钮后，等待页面响应或元素出现
+4. 操作之间必须有明显的延迟，避免操作过快
+
 ---
 <Previous Actions>:
 {previous_actions}
@@ -683,29 +696,57 @@ if __name__ == "__main__":
         Returns:
             初始脚本
         """
+        # 获取浏览器无头模式配置
+        browser_headless = False
+        from ...core.database import get_db
+        from ...models.global_config import GlobalConfig, ConfigKeys
+        from sqlalchemy import select
+        
+        async for db in get_db():
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.BROWSER_HEADLESS)
+            )
+            config = result.scalar_one_or_none()
+            if config:
+                browser_headless = config.config_value.lower() == "true"
+            break
+        
         # 使用 Playwright 浏览器
-        initial_script = f"""
-from playwright.async_api import async_playwright
+        # 完全避免使用f-string，使用字符串格式化
+        script_template = '''
+from playwright.async_api import async_playwright, expect
 import asyncio
+import sys
+import json
 
 async def generated_script_run():
     async with async_playwright() as p:
-        # 使用 Playwright 浏览器
-        browser = await p.chromium.launch()
+        # 使用 Playwright 浏览器，设置headless参数
+        browser = await p.chromium.launch(headless=%s)
 
         page = await browser.new_page()
 
         # Action 0
-        await page.goto("{target_url}")
+        await page.goto("%s")
 
         # Next Action
 
         # Retrieve DOM State
         dom_state = await page.content()
         await browser.close()
-        return dom_state
 
-"""
+        # 使用json.dumps来处理Unicode字符，避免编码错误
+        print(json.dumps({"dom_state": dom_state}, ensure_ascii=False))
+
+if __name__ == "__main__":
+    # 设置stdout的编码为utf-8，避免Unicode编码错误
+    sys.stdout.reconfigure(encoding='utf-8')
+    asyncio.run(generated_script_run())
+
+'''
+        
+        # 使用字符串格式化来插入变量
+        initial_script = script_template % (browser_headless, target_url)
         return initial_script
 
     async def _get_browser_headless_config(self) -> bool:
@@ -784,8 +825,9 @@ async def generated_script_run():
             f"\n{indentation}# Next Action"
         )
 
-        # 替换 # Next Action 标记
-        script_updated = re.sub(r'# Next Action', code_to_insert, script, count=1)
+        # 使用字符串替换而不是正则表达式，确保只替换第一个出现的# Next Action
+        # 这样可以避免影响到脚本的其他部分
+        script_updated = script.replace("\n" + indentation + "# Next Action", "\n" + code_to_insert, 1)
 
         return script_updated
 

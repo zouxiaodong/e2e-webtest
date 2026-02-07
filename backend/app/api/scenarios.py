@@ -34,15 +34,17 @@ async def create_scenario(
     db: AsyncSession = Depends(get_db)
 ):
     """创建测试场景"""
-    # 验证target_url不为空
+    # 如果target_url为空，从数据库中获取TARGET_URL配置
     if not scenario.target_url:
-        raise HTTPException(status_code=400, detail="target_url不能为空")
-    
-    # 验证target_url是有效的URL格式
-    import re
-    url_pattern = re.compile(r'^https?://.+$')
-    if not url_pattern.match(scenario.target_url):
-        raise HTTPException(status_code=400, detail="target_url格式无效，请提供完整的URL（包含http://或https://）")
+        from ..models.global_config import GlobalConfig, ConfigKeys
+        from sqlalchemy import select
+        
+        result = await db.execute(
+            select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.TARGET_URL)
+        )
+        config = result.scalar_one_or_none()
+        if config:
+            scenario.target_url = config.config_value
     
     db_scenario = TestScenario(**scenario.dict())
     db.add(db_scenario)
