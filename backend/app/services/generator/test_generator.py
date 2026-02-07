@@ -1,11 +1,16 @@
-from typing import List, Dict, Any, Optional
+﻿from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
 from playwright.async_api import async_playwright
 from ..llm.bailian_client import bailian_client
 from ...core.config import settings
 from ...schemas.test_case import GenerationStrategy, TestCasePriority, TestCaseType
+from ...core.database import get_db
+from sqlalchemy import select
+from ...models.global_config import GlobalConfig, ConfigKeys
 import json
+from lxml.html.clean import Cleaner
+import lxml.html
 
 
 class TestGenerator:
@@ -19,48 +24,153 @@ class TestGenerator:
             temperature=0.0,
         )
 
-    async def get_page_content(self, target_url: str) -> Dict[str, Any]:
+    def _clean_html(self, html: str) -> str:
         """
-        使用 Playwright 打开页面并获取内容
+        清理 HTML，移除 CSS、JavaScript、注释等无关内容
         Args:
-            target_url: 目标URL
+            html: 原始 HTML
         Returns:
-            包含页面 HTML、截图等信息
+            清理后的 HTML
         """
-        async with async_playwright() as p:
-            # 尝试使用系统安装的 Chrome
-            try:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    channel="chrome"  # 使用系统 Chrome
+        # 使用 lxml 的 Cleaner 来清理 HTML
+        cleaner = Cleaner(
+            javascript=True,  # Remove script tags and js attributes
+            style=True,       # Remove style tags
+            inline_style=True, # Remove inline style attributes
+            comments=True,    # Remove comments
+            safe_attrs_only=True,  # Only keep safe attributes
+            forms=False,      # Keep form tags (needed for testing)
+            page_structure=False,  # Keep basic page structure
+        )
+
+        # 清理 HTML
+        cleaned_html = cleaner.clean_html(html)
+
+        # 转换为字符串并压缩空格
+        if isinstance(cleaned_html, bytes):
+            cleaned_html = cleaned_html.decode('utf-8')
+
+        # 移除多余空格
+        import re
+        cleaned_html = re.sub(r'\s+', ' ', cleaned_html)
+
+        return cleaned_html.strip()
+
+    async def get_page_content(self, target_url: str) -> Dict[str, Any]:
+            """
+            使用 Playwright 打开页面并获取内容
+            Args:
+                target_url: 目标URL
+            Returns:
+                包含页面 HTML、截图等信息
+            """
+            # 如果target_url为空，使用settings里面的TARGET_URL
+            if not target_url:
+                from ...core.database import get_db
+                from ...models.global_config import GlobalConfig, ConfigKeys
+                from sqlalchemy import select
+                
+                async for db in get_db():
+                    result = await db.execute(
+                        select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.TARGET_URL)
+                    )
+                    config = result.scalar_one_or_none()
+                    if config:
+                        target_url = config.config_value
+                    break
+                
+                # 如果数据库中也没有配置，使用默认值
+                if not target_url:
+                    target_url = "https://example.com"
+            
+            # 验证target_url是有效的URL格式
+            import re
+            url_pattern = re.compile(r'^https?://.+$')
+            if not url_pattern.match(target_url):
+                raise Exception("target_url格式无效，请提供完整的URL（包含http://或https://）")
+            
+            import tempfile
+            import os
+            import subprocess
+            import base64
+            import json
+            import sys
+            
+            # 获取浏览器无头模式配置
+            browser_headless = True
+            from ...core.database import get_db
+            from ...models.global_config import GlobalConfig, ConfigKeys
+            from sqlalchemy import select
+            
+            async for db in get_db():
+                result = await db.execute(
+                    select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.BROWSER_HEADLESS)
                 )
-            except Exception as e:
-                print(f"使用系统 Chrome 失败: {e}")
-                # 降级到 Playwright 自带的浏览器
-                browser = await p.chromium.launch(headless=True)
+                config = result.scalar_one_or_none()
+                if config:
+                    browser_headless = config.config_value.lower() == "true"
+                break
             
-            page = await browser.new_page()
+            # 创建临时脚本文件
+            script = f"""import asyncio
+from playwright.async_api import async_playwright
+import base64
+import json
+
+async def fetch_page():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless={browser_headless})
+        page = await browser.new_page()
+        await page.goto("{target_url}", wait_until="networkidle", timeout=30000)
+        html = await page.content()
+        screenshot = await page.screenshot(full_page=False)
+        title = await page.title()
+        await browser.close()
+        return html, base64.b64encode(screenshot).decode('utf-8'), title
+
+if __name__ == "__main__":
+    result = asyncio.run(fetch_page())
+    html, screenshot, title = result
+    print(json.dumps({{"html": html, "screenshot": f"data:image/png;base64,{{screenshot}}", "title": title}}))
+    """
+            
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+                f.write(script)
+                temp_script_path = f.name
             
             try:
-                # 访问页面
-                await page.goto(target_url, wait_until="networkidle", timeout=30000)
+                # 运行脚本
+                result = subprocess.run(
+                    [sys.executable, temp_script_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    encoding='utf-8',
+                    errors='replace'
+                )
                 
-                # 获取页面 HTML
-                html_content = await page.content()
+                if result.returncode != 0:
+                    print(f"脚本执行失败: {result.stderr}")
+                    raise Exception(f"脚本执行失败: {result.stderr}")
                 
-                # 获取页面截图（base64）
-                screenshot_bytes = await page.screenshot(full_page=False)
-                import base64
-                screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                # 解析结果
+                data = json.loads(result.stdout.strip())
+                
+                # 清理 HTML
+                html_content = self._clean_html(data["html"])
                 
                 return {
                     "html": html_content,
-                    "screenshot": f"data:image/png;base64,{screenshot_base64}",
-                    "title": await page.title(),
-                    "url": page.url
+                    "screenshot": data["screenshot"],
+                    "title": data["title"],
+                    "url": target_url
                 }
             finally:
-                await browser.close()
+                # 清理临时文件
+                try:
+                    os.unlink(temp_script_path)
+                except:
+                    pass
 
     async def analyze_page_content(self, page_content: Dict[str, Any], user_query: str) -> Dict[str, Any]:
         """
@@ -573,22 +683,16 @@ class TestGenerator:
         Returns:
             初始脚本
         """
-        # 尝试使用系统 Chrome，如果失败则使用 Playwright 浏览器
+        # 使用 Playwright 浏览器
         initial_script = f"""
 from playwright.async_api import async_playwright
 import asyncio
 
 async def generated_script_run():
     async with async_playwright() as p:
-        # 尝试使用系统 Chrome，如果失败则使用 Playwright 浏览器
-        try:
-            browser = await p.chromium.launch(
-                headless={settings.BROWSER_HEADLESS},
-                channel="chrome"
-            )
-        except Exception:
-            browser = await p.chromium.launch(headless={settings.BROWSER_HEADLESS})
-        
+        # 使用 Playwright 浏览器
+        browser = await p.chromium.launch()
+
         page = await browser.new_page()
 
         # Action 0
@@ -603,6 +707,28 @@ async def generated_script_run():
 
 """
         return initial_script
+
+    async def _get_browser_headless_config(self) -> bool:
+        """
+        从数据库获取 browser_headless 配置
+        Returns:
+            browser_headless 配置值
+        """
+        async for db in get_db():
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.BROWSER_HEADLESS)
+            )
+            config = result.scalar_one_or_none()
+
+            if config:
+                # 从数据库读取配置
+                value = config.config_value.lower() == "true"
+                print(f"📋 从数据库读取 browser_headless 配置: {config.config_value} -> {value}")
+                return value
+            else:
+                # 如果数据库中没有配置，使用默认值
+                print("⚠️ 数据库中没有 browser_headless 配置，使用默认值 True")
+                return True  # 默认为无头模式
 
     async def validate_generated_code(self, code: str) -> tuple[bool, str]:
         """

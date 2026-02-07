@@ -23,18 +23,56 @@ uvicorn_logger.setLevel(logging.INFO)
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.setLevel(logging.INFO)
 
-# Windows 特定：设置事件循环策略以支持 Playwright 子进程
+# Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
 if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    print("🔄 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright")
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    print(f"✅ 当前事件循环策略: {asyncio.get_event_loop_policy().__class__.__name__}")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时初始化数据库
+    # 启动时输出当前配置
+    print("=" * 60)
+    print("📋 当前配置 (Settings)")
+    print("=" * 60)
+    print(f"应用名称: {settings.APP_NAME}")
+    print(f"应用版本: {settings.APP_VERSION}")
+    print(f"调试模式: {settings.DEBUG}")
+    print(f"百练 LLM 模型: {settings.BAILIAN_LLM_MODEL}")
+    print(f"百练 VL 模型: {settings.BAILIAN_VL_MODEL}")
+    print(f"数据库: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"数据库: {settings.DATABASE_URL}")
+    print(f"CORS 允许源: {settings.CORS_ORIGINS}")
+    print(f"浏览器无头模式（默认）: {settings.BROWSER_HEADLESS}")
+    print(f"浏览器超时（默认）: {settings.BROWSER_TIMEOUT}ms")
+    print("=" * 60)
+
+    # 初始化数据库
     print("正在初始化数据库...")
     await init_db()
     print("数据库初始化完成")
+
+    # 输出数据库中的实际配置
+    from .models.global_config import GlobalConfig, ConfigKeys
+    from sqlalchemy import select
+    from .core.database import get_db
+    async for db in get_db():
+        result = await db.execute(select(GlobalConfig))
+        configs = result.scalars().all()
+        config_dict = {c.config_key: c.config_value for c in configs}
+
+        print("=" * 60)
+        print("📋 数据库中的实际配置")
+        print("=" * 60)
+        print(f"目标URL: {config_dict.get(ConfigKeys.TARGET_URL, '未设置')}")
+        print(f"默认用户名: {config_dict.get(ConfigKeys.DEFAULT_USERNAME, '未设置')}")
+        print(f"浏览器无头模式: {config_dict.get(ConfigKeys.BROWSER_HEADLESS, 'true')} ({'关闭' if config_dict.get(ConfigKeys.BROWSER_HEADLESS) == 'false' else '开启'})")
+        print(f"浏览器超时: {config_dict.get(ConfigKeys.BROWSER_TIMEOUT, '30000')}ms")
+        print(f"自动检测验证码: {config_dict.get(ConfigKeys.AUTO_DETECT_CAPTCHA, 'false')}")
+        print("=" * 60)
+        break
+
     yield
     # 关闭时的清理工作
     print("应用关闭")
@@ -123,6 +161,19 @@ if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
     print("🚀 Starting FastAPI server...")
+    print("=" * 60)
+    print("=" * 60)
+    print("📋 当前配置 (Settings)")
+    print("=" * 60)
+    print(f"应用名称: {settings.APP_NAME}")
+    print(f"应用版本: {settings.APP_VERSION}")
+    print(f"调试模式: {settings.DEBUG}")
+    print(f"百练 LLM 模型: {settings.BAILIAN_LLM_MODEL}")
+    print(f"百练 VL 模型: {settings.BAILIAN_VL_MODEL}")
+    print(f"数据库: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"数据库: {settings.DATABASE_URL}")
+    print(f"CORS 允许源: {settings.CORS_ORIGINS}")
+    print(f"浏览器无头模式: {settings.BROWSER_HEADLESS}")
+    print(f"浏览器超时: {settings.BROWSER_TIMEOUT}ms")
     print("=" * 60)
     uvicorn.run(
         "app.main:app",

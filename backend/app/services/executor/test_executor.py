@@ -47,13 +47,9 @@ class TestExecutor:
         }
 
         try:
-            # Windows 特定：设置事件循环策略以支持子进程
-            if asyncio.get_event_loop_policy().__class__.__name__ == 'WindowsProactorEventLoopPolicy':
-                # 如果已经是 ProactorEventLoop，继续使用
-                pass
-            elif hasattr(asyncio, 'WindowsProactorEventLoopPolicy'):
-                # 在 Windows 上设置为 ProactorEventLoop
-                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+            # Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
+            if sys.platform == 'win32':
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
             # 步骤1: 生成操作步骤
             print("步骤1: 生成操作步骤...")
@@ -139,13 +135,7 @@ class TestExecutor:
         Returns:
             DOM状态
         """
-        # Windows 特定：设置事件循环策略以支持子进程
-        if hasattr(asyncio, 'WindowsProactorEventLoopPolicy'):
-            try:
-                asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-            except:
-                pass  # 如果已经设置，忽略错误
-
+        # 直接在当前事件循环中执行脚本
         exec_namespace = {}
         exec(script, exec_namespace)
         dom_content = await exec_namespace["generated_script_run"]()
