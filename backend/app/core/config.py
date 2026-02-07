@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # CORS 配置
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174"
 
     # 浏览器配置
     BROWSER_HEADLESS: bool = True

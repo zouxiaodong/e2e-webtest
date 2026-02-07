@@ -3,7 +3,7 @@ import api from './index'
 export const testCasesApi = {
   // 获取测试用例列表
   getList(params) {
-    return api.get('/test-cases', { params })
+    return api.get('/test-cases/', { params })
   },
 
   // 获取测试用例详情
@@ -13,7 +13,7 @@ export const testCasesApi = {
 
   // 创建测试用例
   create(data) {
-    return api.post('/test-cases', data)
+    return api.post('/test-cases/', data)
   },
 
   // 更新测试用例

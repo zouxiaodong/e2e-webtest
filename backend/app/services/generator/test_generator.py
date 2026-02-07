@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage
+from playwright.async_api import async_playwright
 from ..llm.bailian_client import bailian_client
 from ...core.config import settings
 from ...schemas.test_case import GenerationStrategy, TestCasePriority, TestCaseType
@@ -17,6 +18,177 @@ class TestGenerator:
             model=settings.BAILIAN_LLM_MODEL,
             temperature=0.0,
         )
+
+    async def get_page_content(self, target_url: str) -> Dict[str, Any]:
+        """
+        使用 Playwright 打开页面并获取内容
+        Args:
+            target_url: 目标URL
+        Returns:
+            包含页面 HTML、截图等信息
+        """
+        async with async_playwright() as p:
+            # 尝试使用系统安装的 Chrome
+            try:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    channel="chrome"  # 使用系统 Chrome
+                )
+            except Exception as e:
+                print(f"使用系统 Chrome 失败: {e}")
+                # 降级到 Playwright 自带的浏览器
+                browser = await p.chromium.launch(headless=True)
+            
+            page = await browser.new_page()
+            
+            try:
+                # 访问页面
+                await page.goto(target_url, wait_until="networkidle", timeout=30000)
+                
+                # 获取页面 HTML
+                html_content = await page.content()
+                
+                # 获取页面截图（base64）
+                screenshot_bytes = await page.screenshot(full_page=False)
+                import base64
+                screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                
+                return {
+                    "html": html_content,
+                    "screenshot": f"data:image/png;base64,{screenshot_base64}",
+                    "title": await page.title(),
+                    "url": page.url
+                }
+            finally:
+                await browser.close()
+
+    async def analyze_page_content(self, page_content: Dict[str, Any], user_query: str) -> Dict[str, Any]:
+        """
+        使用 VL 模型分析页面内容，识别可测试的元素
+        Args:
+            page_content: 页面内容（HTML 和截图）
+            user_query: 用户查询
+        Returns:
+            页面分析结果
+        """
+        from ..llm.bailian_client import BailianClient
+        
+        client = BailianClient()
+        
+        # 使用 VL 模型分析页面截图
+        system_prompt = """你是一个Web应用测试专家。分析提供的网页截图，识别可以测试的功能点和元素。"""
+
+        prompt = f"""请分析以下网页截图，识别可以测试的功能和元素。
+
+页面标题: {page_content.get('title', '')}
+页面URL: {page_content.get('url', '')}
+用户需求: {user_query}
+
+请仔细观察截图，识别：
+1. 页面类型（登录页、注册页、表单页等）
+2. 表单及其字段（输入框、选择器等）
+3. 按钮（提交、取消等）
+4. 重要链接
+5. 基于页面内容和用户需求的测试建议
+
+请以JSON格式返回分析结果，包含以下字段：
+- "page_type": 页面类型
+- "forms": 表单列表，每个表单包含:
+  - "fields": 字段列表，包含:
+    - "name": 字段名称
+    - "type": 字段类型
+    - "required": 是否必填
+- "buttons": 按钮列表，包含:
+  - "text": 按钮文本
+  - "type": 按钮类型
+- "test_suggestions": 测试建议
+
+只输出JSON结果，不要添加任何解释。"""
+
+        # 提取截图 base64 数据
+        screenshot_data = page_content.get('screenshot', '')
+        if screenshot_data.startswith('data:image'):
+            # 移除 data:image/png;base64, 前缀
+            import base64
+            if ',' in screenshot_data:
+                screenshot_base64 = screenshot_data.split(',')[1]
+            else:
+                screenshot_base64 = screenshot_data
+        else:
+            screenshot_base64 = screenshot_data
+
+        try:
+            # 使用 VL 模型分析截图
+            response = await client.generate_text_with_image(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                image_base64=screenshot_base64
+            )
+            
+            return json.loads(response)
+        except Exception as e:
+            print(f"VL 模型分析失败: {e}")
+            # 降级到文本分析
+            return await self._analyze_page_from_html(page_content, user_query)
+
+    async def _analyze_page_from_html(self, page_content: Dict[str, Any], user_query: str) -> Dict[str, Any]:
+        """
+        从 HTML 分析页面内容（降级方法）
+        Args:
+            page_content: 页面内容
+            user_query: 用户查询
+        Returns:
+            页面分析结果
+        """
+        html = page_content.get('html', '')
+        
+        # 简单的 HTML 解析
+        import re
+        
+        # 检测页面类型
+        page_type = "unknown"
+        if "login" in html.lower():
+            page_type = "登录页"
+        elif "register" in html.lower() or "signup" in html.lower():
+            page_type = "注册页"
+        elif "form" in html.lower():
+            page_type = "表单页"
+        elif "dashboard" in html.lower():
+            page_type = "仪表板"
+        
+        # 检测表单字段
+        forms = []
+        input_pattern = r'<input[^>]*(type=["\'](text|password|email|number)["\'][^>]*)\s*(name=["\']([^"\']*)["\'])?'
+        for match in re.finditer(input_pattern, html, re.IGNORECASE):
+            input_type = match.group(1)
+            field_name = match.group(3) or ""
+            if field_name:
+                forms.append({
+                    "fields": [{
+                        "name": field_name,
+                        "type": input_type,
+                        "required": "required" in match.group(0).lower()
+                    }]
+                })
+        
+        # 检测按钮
+        buttons = []
+        button_pattern = r'<button[^>]*>(.*?)</button>'
+        for match in re.finditer(button_pattern, html, re.IGNORECASE):
+            button_text = match.group(1).strip()
+            if button_text:
+                buttons.append({
+                    "text": button_text,
+                    "type": "button"
+                })
+        
+        return {
+            "page_type": page_type,
+            "forms": forms,
+            "buttons": buttons,
+            "links": [],
+            "test_suggestions": [f"基于页面类型 {page_type} 进行测试"]
+        }
 
     async def analyze_scenario(self, user_query: str, target_url: str) -> Dict[str, Any]:
         """
@@ -73,45 +245,81 @@ class TestGenerator:
         Returns:
             测试用例列表，每个用例包含名称、描述、优先级、类型等
         """
-        # 分析场景
-        scenario_analysis = await self.analyze_scenario(user_query, target_url)
-
-        # 根据策略生成用例
+        print(f"正在分析页面: {target_url}")
+        
+        # 步骤1: 获取页面内容（使用 Playwright 打开页面）
+        page_content = await self.get_page_content(target_url)
+        print(f"页面标题: {page_content.get('title', 'N/A')}")
+        
+        # 步骤2: 使用 VL 模型分析页面内容
+        print("正在使用 VL 模型分析页面...")
+        page_analysis = await self.analyze_page_content(page_content, user_query)
+        print(f"页面类型: {page_analysis.get('page_type', 'N/A')}")
+        print(f"发现 {len(page_analysis.get('forms', []))} 个表单")
+        print(f"发现 {len(page_analysis.get('buttons', []))} 个按钮")
+        
+        # 步骤3: 结合用户需求和页面分析生成测试用例
         if generation_strategy == GenerationStrategy.HAPPY_PATH:
-            test_cases = await self._generate_happy_path_cases(user_query, target_url)
+            test_cases = await self._generate_happy_path_cases(
+                user_query, 
+                target_url, 
+                page_analysis
+            )
         elif generation_strategy == GenerationStrategy.BASIC:
-            test_cases = await self._generate_basic_cases(user_query, target_url, scenario_analysis)
+            test_cases = await self._generate_basic_cases(
+                user_query, 
+                target_url, 
+                page_analysis
+            )
         elif generation_strategy == GenerationStrategy.COMPREHENSIVE:
-            test_cases = await self._generate_comprehensive_cases(user_query, target_url, scenario_analysis)
+            test_cases = await self._generate_comprehensive_cases(
+                user_query, 
+                target_url, 
+                page_analysis
+            )
         else:
-            test_cases = await self._generate_basic_cases(user_query, target_url, scenario_analysis)
+            test_cases = await self._generate_basic_cases(
+                user_query, 
+                target_url, 
+                page_analysis
+            )
 
         return test_cases
 
     async def _generate_happy_path_cases(
         self,
         user_query: str,
-        target_url: str
+        target_url: str,
+        page_analysis: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """生成仅正向测试用例"""
         system_prompt = """你是一个测试用例设计专家。请为给定的测试场景生成一个正向测试用例（Happy Path）。"""
+
+        # 提取页面信息
+        forms_info = page_analysis.get('forms', [])
+        buttons_info = page_analysis.get('buttons', [])
+        page_type = page_analysis.get('page_type', 'unknown')
 
         prompt = f"""为以下测试场景生成一个正向测试用例。
 
 场景描述: {user_query}
 目标URL: {target_url}
+页面类型: {page_type}
+页面表单: {json.dumps(forms_info, ensure_ascii=False)}
+页面按钮: {json.dumps(buttons_info, ensure_ascii=False)}
 
 要求：
-1. 用例应该是核心功能的主流程测试
-2. 使用正确的输入数据
-3. 验证功能正常工作
+1. 基于实际页面元素生成测试用例
+2. 用例应该是核心功能的主流程测试
+3. 使用页面中实际存在的表单字段和按钮
+4. 输入合理的数据
 
 以JSON格式返回，包含以下字段：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象）
-- "expected_result": 预期结果
+- "test_data": 测试数据（JSON对象），包含实际的表单字段值
+- "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0"）
 - "case_type": 用例类型（"positive"）
 
@@ -139,31 +347,37 @@ class TestGenerator:
         self,
         user_query: str,
         target_url: str,
-        scenario_analysis: Dict[str, Any]
+        page_analysis: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """生成基础覆盖用例（正向+主要异常）"""
         system_prompt = """你是一个测试用例设计专家。请为给定的测试场景生成多个测试用例，覆盖正向和主要异常情况。"""
 
-        test_points = scenario_analysis.get("test_points", ["功能测试", "异常测试"])
+        # 提取页面信息
+        forms_info = page_analysis.get('forms', [])
+        buttons_info = page_analysis.get('buttons', [])
+        page_type = page_analysis.get('page_type', 'unknown')
+        test_suggestions = page_analysis.get('test_suggestions', [])
 
         prompt = f"""为以下测试场景生成测试用例，至少包含正向测试和异常测试。
 
 场景描述: {user_query}
 目标URL: {target_url}
-测试维度: {scenario_analysis.get('test_dimensions', [])}
-测试点: {test_points}
+页面类型: {page_type}
+页面表单: {json.dumps(forms_info, ensure_ascii=False)}
+页面按钮: {json.dumps(buttons_info, ensure_ascii=False)}
+测试建议: {json.dumps(test_suggestions, ensure_ascii=False)}
 
 要求生成以下用例：
-1. 一个正向测试用例（P0优先级）
-2. 一个异常测试用例（P1优先级）
-3. 一个边界测试用例（P2优先级）
+1. 一个正向测试用例（P0优先级）- 使用正确的数据
+2. 一个异常测试用例（P1优先级）- 使用错误数据（如空值、格式错误）
+3. 一个边界测试用例（P2优先级）- 使用边界值
 
 以JSON数组格式返回，每个用例包含：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象）
-- "expected_result": 预期结果
+- "test_data": 测试数据（JSON对象），基于实际表单字段
+- "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0", "P1", "P2"）
 - "case_type": 用例类型（"positive", "negative", "boundary"）
 
@@ -203,31 +417,39 @@ class TestGenerator:
         self,
         user_query: str,
         target_url: str,
-        scenario_analysis: Dict[str, Any]
+        page_analysis: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """生成全面测试用例（覆盖所有维度）"""
         system_prompt = """你是一个测试用例设计专家。请为给定的测试场景生成全面的测试用例，覆盖所有测试维度。"""
+
+        # 提取页面信息
+        forms_info = page_analysis.get('forms', [])
+        buttons_info = page_analysis.get('buttons', [])
+        page_type = page_analysis.get('page_type', 'unknown')
+        test_suggestions = page_analysis.get('test_suggestions', [])
 
         prompt = f"""为以下测试场景生成全面的测试用例。
 
 场景描述: {user_query}
 目标URL: {target_url}
-测试维度: {scenario_analysis.get('test_dimensions', [])}
-测试点: {scenario_analysis.get('test_points', [])}
+页面类型: {page_type}
+页面表单: {json.dumps(forms_info, ensure_ascii=False)}
+页面按钮: {json.dumps(buttons_info, ensure_ascii=False)}
+测试建议: {json.dumps(test_suggestions, ensure_ascii=False)}
 
 要求生成以下用例：
-1. 正向测试用例（P0优先级）
-2. 负向测试用例（P1优先级）- 错误数据
-3. 边界测试用例（P2优先级）- 边界值
-4. 异常测试用例（P2优先级）- 特殊字符、空值等
+1. 正向测试用例（P0优先级）- 使用正确的数据
+2. 负向测试用例（P1优先级）- 错误数据（空值、格式错误）
+3. 边界测试用例（P2优先级）- 边界值（最大长度、最小值）
+4. 异常测试用例（P2优先级）- 特殊字符、SQL注入、XSS等
 5. 安全测试用例（P3优先级）- 如适用
 
 以JSON数组格式返回，每个用例包含：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象）
-- "expected_result": 预期结果
+- "test_data": 测试数据（JSON对象），基于实际表单字段
+- "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0", "P1", "P2", "P3"）
 - "case_type": 用例类型（"positive", "negative", "boundary", "exception", "security"）
 
@@ -351,13 +573,22 @@ class TestGenerator:
         Returns:
             初始脚本
         """
+        # 尝试使用系统 Chrome，如果失败则使用 Playwright 浏览器
         initial_script = f"""
 from playwright.async_api import async_playwright
 import asyncio
 
 async def generated_script_run():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless={settings.BROWSER_HEADLESS})
+        # 尝试使用系统 Chrome，如果失败则使用 Playwright 浏览器
+        try:
+            browser = await p.chromium.launch(
+                headless={settings.BROWSER_HEADLESS},
+                channel="chrome"
+            )
+        except Exception:
+            browser = await p.chromium.launch(headless={settings.BROWSER_HEADLESS})
+        
         page = await browser.new_page()
 
         # Action 0

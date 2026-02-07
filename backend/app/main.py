@@ -1,12 +1,27 @@
 import asyncio
 import sys
-from fastapi import FastAPI
+import logging
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from .core.config import settings
 from .core.database import init_db
 from .api import test_cases, scenarios, configs
+
+# 配置日志
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger(__name__)
+
+# 配置 uvicorn 的日志
+uvicorn_logger = logging.getLogger("uvicorn")
+uvicorn_logger.setLevel(logging.INFO)
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.setLevel(logging.INFO)
 
 # Windows 特定：设置事件循环策略以支持 Playwright 子进程
 if sys.platform == 'win32':
@@ -33,14 +48,35 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 配置CORS
+# 配置CORS（开发环境：允许所有）
+# 注意：由于前端使用 vite 代理，理论上不需要 CORS 配置
+# 但为了保险起见，保留简单的允许所有配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 添加请求日志中间件
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """记录所有HTTP请求"""
+    print(f"📥 [REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
+    logger.info(f"📥 [REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
+    
+    try:
+        response = await call_next(request)
+        print(f"📤 [RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
+        logger.info(f"📤 [RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
+        return response
+    except Exception as e:
+        print(f"❌ [ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
+        logger.error(f"❌ [ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
 
 # 注册路由
 app.include_router(test_cases.router)
@@ -70,11 +106,30 @@ async def health_check():
     }
 
 
+# 全局异常处理器
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """全局异常处理，记录所有未捕获的异常"""
+    error_msg = f"❌ Unhandled exception: {request.method} {request.url.path} - {type(exc).__name__}: {str(exc)}"
+    print(error_msg)
+    logger.error(error_msg)
+    import traceback
+    traceback_str = traceback.format_exc()
+    print(traceback_str)
+    logger.error(traceback_str)
+    return {"error": f"Internal Server Error: {str(exc)}"}
+
 if __name__ == "__main__":
     import uvicorn
+    print("=" * 60)
+    print("🚀 Starting FastAPI server...")
+    print("=" * 60)
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=settings.DEBUG
+        reload=False,  # 禁用 reload 以避免日志问题
+        access_log=True,
+        log_level="debug",
+        use_colors=True
     )

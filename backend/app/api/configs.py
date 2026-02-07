@@ -59,6 +59,8 @@ async def update_settings(
     db: AsyncSession = Depends(get_db)
 ):
     """更新全局配置设置"""
+    print(f"收到配置更新请求: {settings}")
+    
     # 定义配置映射
     config_mappings = [
         (ConfigKeys.TARGET_URL, settings.target_url, "目标URL", "string"),
@@ -71,7 +73,9 @@ async def update_settings(
         (ConfigKeys.BROWSER_TIMEOUT, str(settings.browser_timeout), "浏览器超时时间", "number"),
     ]
     
+    updated_count = 0
     for key, value, description, config_type in config_mappings:
+        print(f"处理配置: {key} = {value} (type: {type(value).__name__})")
         if value is not None:
             result = await db.execute(
                 select(GlobalConfig).where(GlobalConfig.config_key == key)
@@ -80,6 +84,7 @@ async def update_settings(
             
             if config:
                 # 更新现有配置
+                print(f"  更新现有配置: {key}")
                 await db.execute(
                     update(GlobalConfig)
                     .where(GlobalConfig.config_key == key)
@@ -87,6 +92,7 @@ async def update_settings(
                 )
             else:
                 # 创建新配置
+                print(f"  创建新配置: {key}")
                 new_config = GlobalConfig(
                     config_key=key,
                     config_value=value,
@@ -94,8 +100,12 @@ async def update_settings(
                     description=description
                 )
                 db.add(new_config)
+            updated_count += 1
+        else:
+            print(f"  跳过配置（值为None）: {key}")
     
     await db.commit()
+    print(f"配置更新完成，共更新 {updated_count} 项配置")
     return {"message": "配置更新成功"}
 
 

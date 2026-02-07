@@ -1,10 +1,15 @@
+import asyncio
+import sys
+import logging
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
-from typing import List
+from typing import List, Optional
 
 from ..core.database import get_db
 from ..models.test_case import TestScenario, TestCase, TestReport
+from ..models.global_config import GlobalConfig, ConfigKeys
 from ..schemas.test_case import (
     TestScenarioCreate,
     TestScenarioUpdate,
@@ -14,7 +19,8 @@ from ..schemas.test_case import (
     ScenarioExecuteRequest,
     QuickGenerateRequest,
     TestCaseResponse,
-    TestReportResponse
+    TestReportResponse,
+    GenerationStrategy
 )
 from ..services.executor.test_executor import test_executor
 from ..services.generator.test_generator import test_generator
@@ -137,33 +143,34 @@ async def delete_scenario(
 
 @router.post("/{scenario_id}/generate")
 async def generate_scenario_cases(
-    request: ScenarioGenerateRequest,
+    scenario_id: int,
+    generation_strategy: Optional[GenerationStrategy] = None,
     db: AsyncSession = Depends(get_db)
 ):
     """为场景生成测试用例"""
     result = await db.execute(
-        select(TestScenario).where(TestScenario.id == request.scenario_id)
+        select(TestScenario).where(TestScenario.id == scenario_id)
     )
     scenario = result.scalar_one_or_none()
 
     if not scenario:
         raise HTTPException(status_code=404, detail="测试场景不存在")
 
-    # 更新场景状态
+    # 更新场景状态为 generating
     await db.execute(
         update(TestScenario)
-        .where(TestScenario.id == request.scenario_id)
+        .where(TestScenario.id == scenario_id)
         .values(status="generating")
     )
     await db.commit()
 
     try:
         # 生成多个测试用例
-        generation_strategy = request.generation_strategy or scenario.generation_strategy
+        strategy = generation_strategy or scenario.generation_strategy
         test_cases_data = await test_generator.generate_multiple_test_cases(
             scenario.user_query,
             scenario.target_url,
-            generation_strategy
+            strategy
         )
 
         # 为每个用例生成操作步骤和脚本
@@ -182,6 +189,11 @@ async def generate_scenario_cases(
             )
 
             # 创建测试用例
+            # 将 expected_result 转换为 JSON 字符串
+            expected_result = case_data.get("expected_result")
+            if isinstance(expected_result, dict):
+                expected_result = json.dumps(expected_result, ensure_ascii=False)
+            
             db_case = TestCase(
                 scenario_id=scenario.id,
                 name=case_data["name"],
@@ -189,7 +201,7 @@ async def generate_scenario_cases(
                 target_url=scenario.target_url,
                 user_query=case_data["user_query"],
                 test_data=case_data.get("test_data", {}),
-                expected_result=case_data.get("expected_result"),
+                expected_result=expected_result,
                 actions=actions,
                 script=execution_result.get("script"),
                 priority=case_data.get("priority", "P1"),
@@ -199,10 +211,13 @@ async def generate_scenario_cases(
             db.add(db_case)
             generated_cases.append(db_case)
 
-        # 更新场景
+        # 提交所有测试用例
+        await db.commit()
+
+        # 更新场景状态为 completed
         await db.execute(
             update(TestScenario)
-            .where(TestScenario.id == request.scenario_id)
+            .where(TestScenario.id == scenario_id)
             .values(
                 total_cases=len(generated_cases),
                 status="completed"
@@ -216,25 +231,39 @@ async def generate_scenario_cases(
         }
 
     except Exception as e:
+        # 回滚当前事务
+        await db.rollback()
+        
         # 更新场景状态为失败
-        await db.execute(
-            update(TestScenario)
-            .where(TestScenario.id == request.scenario_id)
-            .values(status="failed")
-        )
-        await db.commit()
+        try:
+            await db.execute(
+                update(TestScenario)
+                .where(TestScenario.id == scenario_id)
+                .values(status="failed")
+            )
+            await db.commit()
+        except Exception as update_error:
+            # 如果更新状态也失败，继续回滚
+            await db.rollback()
+            print(f"Failed to update scenario status: {update_error}")
 
+        # 记录详细错误
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"生成测试用例失败: {str(e)}")
+        print(f"错误堆栈:\n{error_detail}")
+        
         raise HTTPException(status_code=500, detail=f"生成测试用例失败: {str(e)}")
 
 
 @router.post("/{scenario_id}/execute")
 async def execute_scenario_cases(
-    request: ScenarioExecuteRequest,
+    scenario_id: int,
     db: AsyncSession = Depends(get_db)
 ):
     """执行场景下的所有测试用例"""
     result = await db.execute(
-        select(TestScenario).where(TestScenario.id == request.scenario_id)
+        select(TestScenario).where(TestScenario.id == scenario_id)
     )
     scenario = result.scalar_one_or_none()
 
@@ -244,7 +273,7 @@ async def execute_scenario_cases(
     # 获取该场景下的所有测试用例
     cases_result = await db.execute(
         select(TestCase)
-        .where(TestCase.scenario_id == request.scenario_id)
+        .where(TestCase.scenario_id == scenario_id)
         .order_by(TestCase.priority)
     )
     test_cases = cases_result.scalars().all()

@@ -3,7 +3,7 @@ import api from './index'
 export const scenariosApi = {
   // 获取场景列表
   getList(params) {
-    return api.get('/scenarios', { params })
+    return api.get('/scenarios/', { params })
   },
 
   // 获取场景详情
@@ -13,7 +13,7 @@ export const scenariosApi = {
 
   // 创建场景
   create(data) {
-    return api.post('/scenarios', data)
+    return api.post('/scenarios/', data)
   },
 
   // 更新场景

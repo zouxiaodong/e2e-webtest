@@ -3,7 +3,7 @@
 export const configsApi = {
   // 获取所有配置
   getList(params) {
-    return api.get('/configs', { params })
+    return api.get('/configs/', { params })
   },
 
   // 获取全局配置设置
@@ -18,11 +18,11 @@ export const configsApi = {
 
   // 获取指定配置
   getConfig(key) {
-    return api.get(/configs/)
+    return api.get(`/configs/${key}`)
   },
 
   // 更新指定配置
   updateConfig(key, data) {
-    return api.put(/configs/, data)
+    return api.put(`/configs/${key}`, data)
   }
 }

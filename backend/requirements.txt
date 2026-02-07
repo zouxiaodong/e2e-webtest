@@ -10,30 +10,30 @@ aiomysql==0.2.0
 pymysql==1.1.0
 cryptography==41.0.7
 
-# LLM and AI
-langchain==0.2.16
-langchain-community==0.2.16
-langchain-core==0.2.38
-langchain-experimental==0.0.65
-langchain-openai==0.1.23
-langgraph==0.2.18
-langgraph-checkpoint==1.0.9
-openai==1.43.0
+# LLM and AI - 使用兼容版本
+langchain>=0.3.0
+langchain-community>=0.3.0
+langchain-core>=0.3.0
+langchain-experimental>=0.3.0
+langchain-openai>=0.2.0
+langgraph>=0.2.0
+langgraph-checkpoint>=1.0.0
+openai>=1.54.0
 python-dotenv==1.0.1
 
 # Browser automation
-playwright==1.47.0
+playwright==1.58.0
 
 # Testing
-pytest==8.3.3
-pytest-asyncio==0.24.0
-pytest-playwright==0.5.2
+pytest==9.0.2
+pytest-asyncio==1.3.0
+pytest-playwright==0.7.2
 ipytest==0.14.2
 nest-asyncio==1.6.0
 
 # Utilities
-pydantic==2.9.2
-pydantic-settings==2.5.2
+pydantic==2.12.0
+pydantic-settings==2.12.0
 python-dateutil==2.9.0.post0
 aiofiles==24.1.0
 Pillow==10.4.0

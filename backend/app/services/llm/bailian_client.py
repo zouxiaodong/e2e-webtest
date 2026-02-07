@@ -246,6 +246,89 @@ class BailianClient:
             print(f"验证码识别错误: {e}")
             return ""
 
+    async def generate_text_with_image(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        image_base64: str = None,
+        max_tokens: int = 2000
+    ) -> str:
+        """
+        使用 VL 模型生成文本（支持图片输入）
+        Args:
+            prompt: 用户提示
+            system_prompt: 系统提示
+            image_base64: base64编码的图片
+            max_tokens: 最大token数
+        Returns:
+            生成的文本
+        """
+        # 构建消息用于日志
+        messages_dict = [
+            {"role": "system", "content": system_prompt if system_prompt else ""},
+            {"role": "user", "content": f"[Image: {len(image_base64) if image_base64 else 0} chars] {prompt}"}
+        ]
+
+        # 记录请求
+        llm_logger.log_request(
+            model=self.vl_model,
+            messages=messages_dict,
+            method="generate_text_with_image",
+            max_tokens=max_tokens
+        )
+
+        try:
+            start_time = time.time()
+            
+            # 构建消息
+            messages = []
+            if system_prompt:
+                messages.append({
+                    "role": "system",
+                    "content": system_prompt
+                })
+            
+            user_content = [
+                {
+                    "type": "text",
+                    "text": prompt
+                }
+            ]
+            
+            if image_base64:
+                user_content.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{image_base64}"
+                    }
+                })
+            
+            messages.append({
+                "role": "user",
+                "content": user_content
+            })
+
+            response = self.client.chat.completions.create(
+                model=self.vl_model,
+                messages=messages,
+                temperature=0.0,
+                max_tokens=max_tokens
+            )
+            duration_ms = (time.time() - start_time) * 1000
+
+            # 记录响应
+            llm_logger.log_response(
+                model=self.vl_model,
+                response=response,
+                duration_ms=duration_ms
+            )
+
+            return response.choices[0].message.content
+        except Exception as e:
+            duration_ms = (time.time() - start_time) * 1000
+            llm_logger.log_error(self.vl_model, e)
+            raise
+
 
 # 创建全局实例
 bailian_client = BailianClient()

@@ -29,8 +29,7 @@ async_session_maker = async_sessionmaker(
     expire_on_commit=False
 )
 
-# 创建基类
-Base = declarative_base()
+
 
 
 async def get_db() -> AsyncSession:

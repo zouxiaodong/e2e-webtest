@@ -119,8 +119,10 @@ const loadConfig = async () => {
   loading.value = true
   try {
     const response = await configsApi.getSettings()
-    Object.assign(form.value, response.data)
+    console.log('加载配置响应:', response)
+    Object.assign(form.value, response)
   } catch (error) {
+    console.error('加载配置失败:', error)
     ElMessage.error('加载配置失败')
   } finally {
     loading.value = false
@@ -131,9 +133,11 @@ const loadConfig = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
+    console.log('保存配置数据:', form.value)
     await configsApi.updateSettings(form.value)
     ElMessage.success('配置保存成功')
   } catch (error) {
+    console.error('保存配置失败:', error)
     ElMessage.error('保存配置失败')
   } finally {
     saving.value = false
