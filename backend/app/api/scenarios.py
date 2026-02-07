@@ -1,4 +1,4 @@
-﻿import asyncio
+import asyncio
 import sys
 import logging
 import json
@@ -177,6 +177,14 @@ async def generate_scenario_cases(
     await db.commit()
 
     try:
+        # 删除该场景下所有现有的测试用例
+        print(f"   Deleting existing test cases for scenario {scenario_id}")
+        await db.execute(
+            delete(TestCase).where(TestCase.scenario_id == scenario_id)
+        )
+        await db.commit()
+        print(f"   Existing test cases deleted")
+
         # 生成多个测试用例
         strategy = generation_strategy or scenario.generation_strategy
         test_cases_data = await test_generator.generate_multiple_test_cases(
@@ -195,12 +203,20 @@ async def generate_scenario_cases(
             )
 
             # 生成测试脚本
-            # 创建测试用例
+            print(f"   Generating script for test case: {case_data['name']}")
+            script_result = await test_executor.execute_workflow(
+                case_data["user_query"],
+                scenario.target_url,
+                auto_detect_captcha=False
+            )
+            script = script_result.get("script", "")
+            print(f"   Script generated: {len(script)} chars")
+
             # 将 expected_result 转换为 JSON 字符串
             expected_result = case_data.get("expected_result")
             if isinstance(expected_result, dict):
                 expected_result = json.dumps(expected_result, ensure_ascii=False)
-            
+
             db_case = TestCase(
                 scenario_id=scenario.id,
                 name=case_data["name"],
@@ -210,7 +226,7 @@ async def generate_scenario_cases(
                 test_data=case_data.get("test_data", {}),
                 expected_result=expected_result,
                 actions=actions,
-                script="",  # Placeholder script
+                script=script,  # Save generated script
                 priority=case_data.get("priority", "P1"),
                 case_type=case_data.get("case_type", "positive"),
                 status="generated"  # Generated but not executed
@@ -303,11 +319,16 @@ async def execute_scenario_cases(
             )
             await db.commit()
 
-            # 执行测试
-            execution_result = await test_executor.execute_workflow(
-                test_case.user_query,
-                test_case.target_url
-            )
+            # 优先使用已保存的脚本
+            if test_case.script and test_case.script.strip():
+                print(f"   Using saved script for test case {test_case.id}")
+                execution_result = await test_executor.execute_saved_script(test_case.script)
+            else:
+                print(f"   No saved script found, generating new script for test case {test_case.id}")
+                execution_result = await test_executor.execute_workflow(
+                    test_case.user_query,
+                    test_case.target_url
+                )
 
             # 更新用例
             status = "completed" if execution_result.get("status") == "success" else "failed"
@@ -315,7 +336,7 @@ async def execute_scenario_cases(
                 update(TestCase)
                 .where(TestCase.id == test_case.id)
                 .values(
-                    script=execution_result.get("script"),
+                    script=execution_result.get("script") or test_case.script,
                     status=status,
                     execution_count=test_case.execution_count + 1
                 )

@@ -83,6 +83,7 @@ class TestExecutor:
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
+            print(f"\n生成的脚本预览:\n{final_script[:1000]}..." if len(final_script) > 1000 else f"\n生成的脚本:\n{final_script}")
 
             # 步骤3: 生成测试名称
             print("\n步骤3: 生成测试名称...")
@@ -137,6 +138,24 @@ class TestExecutor:
 
         system_prompt = """你是一个端到端测试专家。你的目标是将通用的业务端到端测试任务分解为更小的、明确定义的操作。"""
 
+        # 检查是否有验证码输入框
+        has_captcha = False
+        for form in forms_info:
+            for field in form.get('fields', []):
+                field_name = field.get('name', '').lower()
+                field_type = field.get('type', '').lower()
+                if 'captcha' in field_name or '验证码' in field_name:
+                    has_captcha = True
+                    break
+
+        captcha_hint = ""
+        if has_captcha:
+            captcha_hint = """
+重要提示：页面包含验证码输入框，请按以下步骤处理：
+1. 在填写用户名和密码之后，添加步骤："截取验证码图片并调用VL模型识别"
+2. 然后添加步骤："在验证码输入框中填写识别结果"
+3. 最后点击登录按钮"""
+
         prompt = f"""将以下输入转换为包含"actions"键和原子步骤列表作为值的JSON字典。
 这些步骤将用于生成端到端测试脚本。
 每个操作都应该是一个清晰的、原子步骤，可以转换为代码。
@@ -147,8 +166,8 @@ class TestExecutor:
 
 重要提示：
 1. 基于页面实际元素生成操作步骤
-2. 如果页面包含验证码输入框，请在登录操作前添加填写验证码的步骤
-3. 使用页面中实际存在的表单字段名称
+2. 使用页面中实际存在的表单字段名称
+{captcha_hint}
 
 页面信息：
 - 页面类型: {page_type}
@@ -160,11 +179,10 @@ class TestExecutor:
 输出: {{
     "actions": [
         "通过URL导航到登录页面。",
-        "定位并在'Email'输入框中输入有效的邮箱",
-        "在'Password'输入框中输入有效的密码",
-        "如果有验证码输入框，填写验证码",
-        "点击'Login'按钮提交凭据",
-        "通过期望网站头部出现正确的用户名来验证用户已登录。"
+        "定位并在'username'输入框中输入有效的用户名",
+        "定位并在'password'输入框中输入有效的密码",
+        "点击'登录'按钮提交凭据",
+        "通过期望页面跳转到首页来验证用户已登录"
     ]
 }}
 
@@ -305,18 +323,22 @@ class TestExecutor:
             is_valid, error = await test_generator.validate_generated_code(action_code)
             if not is_valid:
                 print(f"   ⚠️ 操作 {i} 代码验证失败: {error}")
+                print(f"   生成的代码:\n{action_code}")
                 continue
 
             # 添加操作注释和代码
             action_codes.append("")
             action_codes.append(f"        # Action {i}: {action}")
+            action_codes.append(f"        print('[TEST] Action {i} started')")
+            print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
 
             # 添加操作代码（缩进处理）
             for line in action_code.strip().split('\n'):
                 action_codes.append(f"        {line}")
 
-            # 添加2秒延迟
-            action_codes.append("        await page.wait_for_timeout(2000)")
+            # 添加3秒延迟（使用 asyncio.sleep 更明显）
+            action_codes.append("        await asyncio.sleep(3)")
+            action_codes.append(f"        print('[TEST] Action {i} completed')")
 
             aggregated_actions += "\n" + action_code
 
@@ -329,23 +351,66 @@ class TestExecutor:
         script = f'''import pytest
 from playwright.async_api import async_playwright, expect
 import asyncio
+import traceback
 
 @pytest.mark.asyncio
 async def test_generated():
-    async with async_playwright() as p:
-        # 启动浏览器
-        browser = await p.chromium.launch(headless={browser_headless})
-        page = await browser.new_page()
+    print("[TEST] Test started")
+    browser = None
+    try:
+        async with async_playwright() as p:
+            print("[TEST] Launching browser")
+            # Launch browser
+            browser = await p.chromium.launch(headless={browser_headless})
+            page = await browser.new_page()
+            print("[TEST] Browser launched")
 
-        # Action 0: 导航到目标页面
-        await page.goto("{target_url}")
+            # Action 0: Navigate to target page
+            print("[TEST] Navigating to: {target_url}")
+            await page.goto("{target_url}")
+            print("[TEST] Page loaded")
+            
+            # Wait for page to be fully loaded
+            await page.wait_for_load_state("networkidle")
+            print("[TEST] Page network idle")
+            
+            # Additional wait to ensure page is visible
+            await asyncio.sleep(3)
+            print("[TEST] Initial wait completed")
+            
+            try:
 {actions_str}
+            except Exception as e:
+                print(f"[TEST] ERROR during actions: {{e}}")
+                print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+                # Take screenshot on error
+                try:
+                    await page.screenshot(path="error_screenshot.png")
+                    print("[TEST] Screenshot saved to error_screenshot.png")
+                except:
+                    pass
+                raise
 
-        # 关闭浏览器
-        await browser.close()
+            # Final wait before closing
+            print("[TEST] Final wait before closing")
+            await asyncio.sleep(5)
+            
+            # Close browser
+            print("[TEST] Closing browser")
+            await browser.close()
+            print("[TEST] Test completed")
+    except Exception as e:
+        print(f"[TEST] FATAL ERROR: {{e}}")
+        print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+        raise
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    pytest.main([__file__, "-v", "-s"])
 '''
         return script
 
@@ -362,32 +427,97 @@ if __name__ == "__main__":
         import subprocess
 
         # 创建临时脚本文件
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+        # 使用 utf-8-sig 编码（带 BOM）以确保 Windows 正确识别
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8-sig') as f:
             f.write(script)
             temp_script_path = f.name
 
         try:
             print("   正在执行测试脚本...")
-            result = subprocess.run(
-                [sys.executable, temp_script_path],
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5分钟超时
-                encoding='utf-8',
-                errors='replace'
-            )
+            print(f"   临时脚本路径: {temp_script_path}")
 
-            if result.returncode != 0:
-                print(f"   ⚠️ 测试执行有警告或错误: {result.stderr[:500]}")
+            # 使用 run_in_executor 在后台线程中执行 subprocess
+            import concurrent.futures
+            
+            def run_subprocess():
+                return subprocess.run(
+                    [sys.executable, temp_script_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,  # 5分钟超时
+                    encoding='utf-8',
+                    errors='replace'
+                )
+            
+            print("   等待测试执行完成（最多5分钟）...")
+            
+            # 在线程池中执行 subprocess
+            loop = asyncio.get_event_loop()
+            with concurrent.futures.ThreadPoolExecutor() as pool:
+                result = await loop.run_in_executor(pool, run_subprocess)
 
             output = result.stdout + "\n" + result.stderr
+
+            print(f"   测试执行完成，返回码: {result.returncode}")
+            print(f"   标准输出:\n{result.stdout[:1000]}")
+            if result.stderr:
+                print(f"   标准错误:\n{result.stderr[:500]}")
+
             return output
+        except subprocess.TimeoutExpired:
+            print("   ⚠️ 测试执行超时（5分钟）")
+            return "测试执行超时"
+        except Exception as e:
+            print(f"   ⚠️ 测试执行异常: {e}")
+            import traceback
+            print(f"   错误详情:\n{traceback.format_exc()}")
+            return f"测试执行异常: {e}"
         finally:
             # 清理临时文件
             try:
                 os.unlink(temp_script_path)
             except:
                 pass
+
+    async def execute_saved_script(self, script: str) -> Dict[str, Any]:
+        """
+        执行已保存的测试脚本（不重新生成）
+        Args:
+            script: 已保存的测试脚本
+        Returns:
+            执行结果
+        """
+        result = {
+            "status": "success",
+            "script": script,
+            "execution_output": "",
+            "error": None
+        }
+        
+        try:
+            print("\n===== 开始执行已保存的测试脚本 =====")
+            print("   直接执行已保存的脚本...")
+            
+            execution_output = await self._execute_test(script)
+            result["execution_output"] = execution_output
+            
+            # 检查执行结果
+            if "FAILED" in execution_output or "Error" in execution_output:
+                result["status"] = "failed"
+                result["error"] = "Test execution failed"
+            
+            print("✅ 测试执行完成")
+            print("\n===== 测试执行完成 =====")
+            return result
+            
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            result["status"] = "error"
+            result["error"] = str(e)
+            print(f"\n❌ 执行过程中出现错误: {str(e)}")
+            print(f"\n错误详情:\n{error_detail}")
+            return result
 
     async def _generate_report(self, result: Dict[str, Any]) -> str:
         """

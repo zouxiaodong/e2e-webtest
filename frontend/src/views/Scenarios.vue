@@ -129,9 +129,21 @@
               </template>
             </el-table-column>
             <el-table-column prop="execution_count" label="执行次数" width="100" />
+            <el-table-column label="操作" width="120">
+              <template #default="{ row }">
+                <el-button size="small" @click="viewTestCaseScript(row)">
+                  查看脚本
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </div>
       </div>
+    </el-dialog>
+
+    <!-- 查看脚本对话框 -->
+    <el-dialog v-model="scriptDialogVisible" :title="`测试脚本 - ${currentTestCaseName}`" width="900px">
+      <el-input v-model="currentTestCaseScript" type="textarea" :rows="20" readonly />
     </el-dialog>
   </div>
 </template>
@@ -147,6 +159,9 @@ const loading = ref(false)
 const createDialogVisible = ref(false)
 const viewDialogVisible = ref(false)
 const currentScenario = ref(null)
+const scriptDialogVisible = ref(false)
+const currentTestCaseScript = ref('')
+const currentTestCaseName = ref('')
 
 const createForm = ref({
   name: '',
@@ -320,6 +335,13 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+// 查看测试用例脚本
+const viewTestCaseScript = (testCase) => {
+  currentTestCaseName.value = testCase.name
+  currentTestCaseScript.value = testCase.script || '暂无脚本'
+  scriptDialogVisible.value = true
 }
 
 onMounted(() => {

@@ -235,17 +235,39 @@ class TestGenerator:
             screenshot_base64 = screenshot_data
 
         try:
+            print(f"正在调用 VL 模型分析截图...")
+            print(f"截图数据长度: {len(screenshot_base64)} chars")
+
             # 使用 VL 模型分析截图
             response = await client.generate_text_with_image(
                 prompt=prompt,
                 system_prompt=system_prompt,
                 image_base64=screenshot_base64
             )
-            
-            return json.loads(response)
+
+            # 打印原始响应用于调试
+            print(f"VL 模型原始响应:\n{response[:500]}..." if len(response) > 500 else f"VL 模型原始响应:\n{response}")
+
+            # 尝试清理响应内容（移除可能的 markdown 代码块标记）
+            cleaned_response = response.strip()
+            if cleaned_response.startswith('```json'):
+                cleaned_response = cleaned_response[7:]
+            if cleaned_response.startswith('```'):
+                cleaned_response = cleaned_response[3:]
+            if cleaned_response.endswith('```'):
+                cleaned_response = cleaned_response[:-3]
+            cleaned_response = cleaned_response.strip()
+
+            result = json.loads(cleaned_response)
+            print(f"VL 模型分析成功!")
+            return result
         except Exception as e:
             print(f"VL 模型分析失败: {e}")
+            import traceback
+            print(f"错误详情:\n{traceback.format_exc()}")
+            print(f"响应内容: {response[:200]}..." if len(response) > 200 else f"响应内容: {response}")
             # 降级到文本分析
+            print(f"降级到 HTML 文本分析...")
             return await self._analyze_page_from_html(page_content, user_query)
 
     async def _analyze_page_from_html(self, page_content: Dict[str, Any], user_query: str) -> Dict[str, Any]:

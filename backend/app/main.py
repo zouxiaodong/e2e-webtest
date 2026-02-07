@@ -23,6 +23,11 @@ uvicorn_logger.setLevel(logging.INFO)
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.setLevel(logging.INFO)
 
+# 配置 OpenAI 和相关库的日志级别为 INFO，避免输出过多调试信息
+logging.getLogger("openai").setLevel(logging.INFO)
+logging.getLogger("httpx").setLevel(logging.INFO)
+logging.getLogger("httpcore").setLevel(logging.INFO)
+
 # Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
 if sys.platform == 'win32':
     print("🔄 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright")
