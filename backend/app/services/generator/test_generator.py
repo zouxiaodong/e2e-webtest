@@ -8,6 +8,7 @@ from ...schemas.test_case import GenerationStrategy, TestCasePriority, TestCaseT
 from ...core.database import get_db
 from sqlalchemy import select
 from ...models.global_config import GlobalConfig, ConfigKeys
+from ...core.llm_logger import llm_logger
 import json
 from lxml.html.clean import Cleaner
 import lxml.html
@@ -716,10 +717,29 @@ class TestGenerator:
 <DOM>:
 {dom_state}"""
 
+        # 记录 LLM 请求
+        llm_logger.log_request(
+            model="qwen-plus",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt}
+            ]
+        )
+
+        import time
+        start_time = time.time()
         response = await self.llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=prompt)
         ])
+        duration_ms = (time.time() - start_time) * 1000
+
+        # 记录 LLM 响应
+        llm_logger.log_response(
+            model="qwen-plus",
+            response=response,
+            duration_ms=duration_ms
+        )
 
         return response.content
 
