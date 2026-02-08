@@ -652,11 +652,19 @@ if __name__ == "__main__":
             action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
             action_codes.append(f"                    pass")
 
-        # 使用同步版本的 Playwright 来避免异步事件循环问题
+        # 使用单独的进程运行 Playwright，完全隔离 asyncio 循环
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
-        def run_sync_playwright():
-            """使用同步版本的 Playwright"""
+        import concurrent.futures
+
+        def run_playwright_in_process():
+            """在单独进程中运行 Playwright"""
+            import sys
+            import os
+            
+            # 添加项目根目录到 Python 路径
+            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            
             from playwright.sync_api import sync_playwright
 
             collected_codes = []
@@ -668,6 +676,9 @@ if __name__ == "__main__":
                 import time
                 time.sleep(2)
 
+                # 导入 ComputerUseService
+                from app.services.computer_use.computer_use_service import computer_use_service
+
                 for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
                     is_last = i == len(actions) - 1
 
@@ -678,8 +689,8 @@ if __name__ == "__main__":
 
                     print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
 
-                    # 使用同步版本的 Computer-Use 服务
-                    # 由于 computer_use_service 是异步的，这里需要转换
+                    # 使用 Computer-Use 服务分析页面并生成操作
+                    # 注意：这里需要使用同步版本的方法
                     import asyncio
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
@@ -724,8 +735,10 @@ if __name__ == "__main__":
                 browser.close()
                 return collected_codes
 
-        # 运行同步 Playwright
-        collected_codes = run_sync_playwright()
+        # 在单独的进程中运行
+        with concurrent.futures.ProcessPoolExecutor() as executor:
+            future = executor.submit(run_playwright_in_process)
+            collected_codes = future.result()
 
         # 将收集的代码添加到 action_codes
         action_codes.extend(collected_codes)
