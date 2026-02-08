@@ -379,6 +379,11 @@ class TestExecutor:
         for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
             is_last = i == len(actions) - 1
 
+            # 如果启用了自动验证码检测，跳过验证码相关的操作（避免重复处理）
+            if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
+                print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
+                continue
+
             print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
             # 生成代码
