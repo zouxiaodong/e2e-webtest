@@ -70,6 +70,13 @@
               </span>
             </el-form-item>
 
+            <el-form-item label="使用 Computer-Use">
+              <el-switch v-model="form.useComputerUse" />
+              <span style="margin-left: 10px; color: #909399; font-size: 12px">
+                使用截图+坐标定位方案（更稳定但成本更高）
+              </span>
+            </el-form-item>
+
             <el-form-item>
               <el-button type="primary" @click="handleGenerate" :loading="generating" size="large">
                 <el-icon><MagicStick /></el-icon>
@@ -168,6 +175,7 @@ const form = ref({
   user_query: '',
   generationStrategy: 'basic',
   autoDetectCaptcha: false,
+  useComputerUse: false,
   useGlobalConfig: false
 })
 
@@ -207,7 +215,8 @@ const handleGenerate = async () => {
       user_query: form.value.user_query,
       target_url: targetUrl,
       generation_strategy: form.value.generationStrategy,
-      auto_detect_captcha: form.value.autoDetectCaptcha
+      auto_detect_captcha: form.value.autoDetectCaptcha,
+      use_computer_use: form.value.useComputerUse
     })
 
     // 渲染所有报告
@@ -233,7 +242,8 @@ const handleReset = () => {
     target_url: '',
     user_query: '',
     generationStrategy: 'basic',
-    autoDetectCaptcha: false
+    autoDetectCaptcha: false,
+    useComputerUse: false
   }
   result.value = null
   renderedReports.value = {}

@@ -508,8 +508,15 @@ async def quick_generate_scenario(
                 target_url
             )
 
-            # 生成测试脚本（带验证码）
-            if request.auto_detect_captcha:
+            # 生成测试脚本（根据配置选择方案）
+            if request.use_computer_use:
+                # 使用 Computer-Use 方案（截图+坐标定位）
+                execution_result = await test_executor.generate_script_with_computer_use(
+                    case_data["user_query"],
+                    target_url,
+                    auto_detect_captcha=request.auto_detect_captcha
+                )
+            elif request.auto_detect_captcha:
                 execution_result = await test_executor.execute_with_captcha(
                     case_data["user_query"],
                     target_url,
