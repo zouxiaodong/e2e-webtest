@@ -80,29 +80,28 @@ async def test_generated():
                 # Action 1: 定位并在'username'输入框中输入'admin'
                 print('[TEST] Action 1 started')
                 username_input = page.locator("input[type='text']").first
-                await username_input.fill('admin')
+                await username_input.fill("admin")
                 await page.wait_for_timeout(2000)
                 await asyncio.sleep(3)
                 print('[TEST] Action 1 completed')
                 # Action 2: 定位并在'password'输入框中输入'PGzVdj8WnN'
                 print('[TEST] Action 2 started')
                 password_input = page.locator("input[type='password']").first
-                await password_input.fill('PGzVdj8WnN')
+                await password_input.fill("PGzVdj8WnN")
                 await page.wait_for_timeout(2000)
                 await asyncio.sleep(3)
                 print('[TEST] Action 2 completed')
-                # Action 5: 点击文本为'登录'的按钮
+                # Action 5: 点击'登录'按钮提交凭据
                 print('[TEST] Action 5 started')
-                login_button = page.get_by_text("登录")
+                login_button = page.locator("button:has-text('登录')")
                 await login_button.click()
                 await page.wait_for_timeout(2000)
                 await asyncio.sleep(3)
                 print('[TEST] Action 5 completed')
-                # Action 6: 验证页面跳转至登录后首页（如URL包含'/dashboard'或出现欢迎元素）或显示登录成功状态
+                # Action 6: 通过期望页面跳转到登录后首页（如包含'首页'或'/dashboard'等典型路径）或出现登录成功提示来验证登录成功
                 print('[TEST] Action 6 started')
                 await expect(page).to_have_url("**/dashboard**", timeout=10000)
-                await expect(page.get_by_text("欢迎登录系统")).to_be_visible(timeout=10000)
-                await page.wait_for_timeout(2000)
+                await expect(page.get_by_text("首页")).to_be_visible(timeout=10000)
                 await asyncio.sleep(3)
                 print('[TEST] Action 6 completed')
             except Exception as e:
