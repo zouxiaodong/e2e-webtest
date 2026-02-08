@@ -652,90 +652,80 @@ if __name__ == "__main__":
             action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
             action_codes.append(f"                    pass")
 
-        # 使用 Computer-Use 方案为每个操作生成代码
+        # 使用同步版本的 Playwright 来避免异步事件循环问题
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
-        # 在单独的线程中运行 Playwright，避免事件循环嵌套问题
-        import concurrent.futures
+        def run_sync_playwright():
+            """使用同步版本的 Playwright"""
+            from playwright.sync_api import sync_playwright
 
-        def run_playwright_in_thread():
-            """在单独线程中运行 Playwright"""
-            import asyncio
-            import sys
-            from playwright.async_api import async_playwright
+            collected_codes = []
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=browser_headless)
+                page = browser.new_page()
+                page.goto(target_url)
+                page.wait_for_load_state("networkidle")
+                import time
+                time.sleep(2)
 
-            # 在子线程中创建新的事件循环
-            # 在 Windows 上使用 ProactorEventLoop 支持子进程
-            if sys.platform == 'win32':
-                loop = asyncio.ProactorEventLoop()
-                print(f"   子线程使用 ProactorEventLoop: {loop.__class__.__name__}")
-            else:
-                loop = asyncio.new_event_loop()
-                print(f"   子线程使用默认事件循环: {loop.__class__.__name__}")
-            asyncio.set_event_loop(loop)
+                for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
+                    is_last = i == len(actions) - 1
 
-            async def main():
-                collected_codes = []
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=browser_headless)
-                    page = await browser.new_page()
-                    await page.goto(target_url)
-                    await page.wait_for_load_state("networkidle")
-                    await asyncio.sleep(2)
+                    # 如果启用了自动验证码检测，跳过验证码相关的操作
+                    if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
+                        print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
+                        continue
 
-                    for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
-                        is_last = i == len(actions) - 1
+                    print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
 
-                        # 如果启用了自动验证码检测，跳过验证码相关的操作
-                        if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
-                            print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
-                            continue
+                    # 使用同步版本的 Computer-Use 服务
+                    # 由于 computer_use_service 是异步的，这里需要转换
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
 
-                        print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
-
-                        # 使用 Computer-Use 服务分析页面并生成操作
-                        action_result = await computer_use_service.analyze_page_and_generate_action(
+                    # 分析页面并生成操作
+                    action_result = loop.run_until_complete(
+                        computer_use_service.analyze_page_and_generate_action(
                             page=page,
                             action_description=action
                         )
+                    )
 
-                        if not action_result.get("element_found"):
-                            print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                            continue
+                    if not action_result.get("element_found"):
+                        print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                        continue
 
-                        # 生成代码
-                        action_code = computer_use_service.generate_playwright_code_from_coordinates(
-                            action=action_result.get("action", "click"),
-                            coordinates=action_result.get("coordinates", {}),
-                            is_last=is_last
-                        )
+                    # 生成代码
+                    action_code = computer_use_service.generate_playwright_code_from_coordinates(
+                        action=action_result.get("action", "click"),
+                        coordinates=action_result.get("coordinates", {}),
+                        is_last=is_last
+                    )
 
-                        print(f"   生成的代码:\n{action_code}")
+                    print(f"   生成的代码:\n{action_code}")
 
-                        # 收集操作代码
-                        code_lines = []
-                        code_lines.append(f"                # Action {i}: {action}")
-                        code_lines.append(f"                print('[TEST] Action {i} started')")
-                        for line in action_code.strip().split('\n'):
-                            code_lines.append(f"                {line}")
-                        code_lines.append("                await asyncio.sleep(3)")
-                        code_lines.append(f"                print('[TEST] Action {i} completed')")
+                    # 收集操作代码
+                    code_lines = []
+                    code_lines.append(f"                # Action {i}: {action}")
+                    code_lines.append(f"                print('[TEST] Action {i} started')")
+                    for line in action_code.strip().split('\n'):
+                        code_lines.append(f"                {line}")
+                    code_lines.append("                await asyncio.sleep(3)")
+                    code_lines.append(f"                print('[TEST] Action {i} completed')")
 
-                        collected_codes.extend(code_lines)
+                    collected_codes.extend(code_lines)
 
-                        # 执行操作以便进行下一步截图分析
-                        await computer_use_service.execute_action_with_coordinates(page, action_result)
+                    # 执行操作以便进行下一步截图分析
+                    loop.run_until_complete(
+                        computer_use_service.execute_action_with_coordinates(page, action_result)
+                    )
 
-                    await browser.close()
-                    return collected_codes
+                browser.close()
+                return collected_codes
 
-                # 运行异步函数
-            return loop.run_until_complete(main())
-
-        # 在单独的线程中运行
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_playwright_in_thread)
-            collected_codes = future.result()
+        # 运行同步 Playwright
+        collected_codes = run_sync_playwright()
 
         # 将收集的代码添加到 action_codes
         action_codes.extend(collected_codes)

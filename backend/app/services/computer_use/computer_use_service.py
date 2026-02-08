@@ -28,18 +28,28 @@ class ComputerUseService:
         """
         分析页面截图并生成操作
         Args:
-            page: Playwright page 对象
+            page: Playwright page 对象（支持同步和异步）
             action_description: 操作描述（如"点击登录按钮"）
             previous_actions: 之前的操作列表
         Returns:
             包含操作类型和坐标的字典
         """
+        # 检测 page 对象是同步还是异步
+        import inspect
+        is_async = inspect.iscoroutinefunction(getattr(page, 'screenshot', lambda: None))
+
         # 1. 截取页面截图
-        screenshot_bytes = await page.screenshot(full_page=True)
+        if is_async:
+            screenshot_bytes = await page.screenshot(full_page=True)
+        else:
+            screenshot_bytes = page.screenshot(full_page=True)
         screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
 
         # 2. 获取页面尺寸
-        viewport = await page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
+        if is_async:
+            viewport = await page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
+        else:
+            viewport = page.evaluate("() => ({ width: window.innerWidth, height: window.innerHeight })")
 
         # 3. 构建 prompt
         system_prompt = """你是一个网页自动化助手。你的任务是分析网页截图，识别用户指定的元素，并返回精确的坐标位置。
@@ -147,7 +157,7 @@ class ComputerUseService:
         """
         根据坐标执行操作
         Args:
-            page: Playwright page 对象
+            page: Playwright page 对象（支持同步和异步）
             action_result: analyze_page_and_generate_action 返回的结果
             text_to_fill: 如果是 fill 操作，要填充的文本
         Returns:
@@ -162,31 +172,52 @@ class ComputerUseService:
         x = coordinates.get("x", 0)
         y = coordinates.get("y", 0)
 
+        # 检测 page 对象是同步还是异步
+        import inspect
+        is_async = inspect.iscoroutinefunction(getattr(page.mouse, 'click', lambda: None))
+
         try:
             if action == "click":
                 # 在指定坐标点击
-                await page.mouse.click(x, y)
+                if is_async:
+                    await page.mouse.click(x, y)
+                else:
+                    page.mouse.click(x, y)
                 print(f"✅ 在坐标 ({x}, {y}) 点击")
                 return True
 
             elif action == "fill":
                 # 先点击，再填充文本
-                await page.mouse.click(x, y)
-                await page.keyboard.press("Control+a")  # 全选
-                await page.keyboard.press("Delete")  # 删除
-                if text_to_fill:
-                    await page.keyboard.type(text_to_fill)
-                    print(f"✅ 在坐标 ({x}, {y}) 填充文本: {text_to_fill}")
+                if is_async:
+                    await page.mouse.click(x, y)
+                    await page.keyboard.press("Control+a")  # 全选
+                    await page.keyboard.press("Delete")  # 删除
+                    if text_to_fill:
+                        await page.keyboard.type(text_to_fill)
+                else:
+                    page.mouse.click(x, y)
+                    page.keyboard.press("Control+a")  # 全选
+                    page.keyboard.press("Delete")  # 删除
+                    if text_to_fill:
+                        page.keyboard.type(text_to_fill)
+                print(f"✅ 在坐标 ({x}, {y}) 填充文本: {text_to_fill}")
                 return True
 
             elif action == "scroll":
-                await page.mouse.wheel(x, y, delta_x=0, delta_y=300)
+                if is_async:
+                    await page.mouse.wheel(x, y, delta_x=0, delta_y=300)
+                else:
+                    page.mouse.wheel(x, y, delta_x=0, delta_y=300)
                 print(f"✅ 在坐标 ({x}, {y}) 滚动")
                 return True
 
             elif action == "wait":
                 print(f"⏳ 等待")
-                await page.wait_for_timeout(2000)
+                if is_async:
+                    await page.wait_for_timeout(2000)
+                else:
+                    import time
+                    time.sleep(2)
                 return True
 
             else:
