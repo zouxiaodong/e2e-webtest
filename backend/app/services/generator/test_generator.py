@@ -692,6 +692,8 @@ class TestGenerator:
 4. 操作之间必须有明显的延迟，避免操作过快
 5. 如果操作涉及"登录"、"提交"、"点击按钮"等，且<DOM>中包含验证码输入框（如input[name*="captcha"]、input[id*="captcha"]或placeholder包含"验证码"），请在点击登录按钮之前先填写验证码字段
 6. 验证码字段通常在密码字段附近，查找包含"captcha"、"验证码"、"code"等关键词的输入框
+7. **选择器必须精确匹配单个元素**：如果存在多个相似的输入框（如用户名和验证码），请使用更具体的选择器，如input[name="username"]、input[id="xxx"]、input[placeholder="用户名"]等，避免使用过于宽泛的选择器如input[type='text']
+8. **优先使用name、id、placeholder属性**来定位元素，这些属性通常更稳定且唯一
 
 ---
 <Previous Actions>:

@@ -21,6 +21,78 @@ class TestExecutor:
         self.dom_state: str = ""
         self.aggregated_actions: str = ""
 
+    async def generate_script_only(
+        self,
+        user_query: str,
+        target_url: str,
+        auto_detect_captcha: bool = False
+    ) -> Dict[str, Any]:
+        """
+        只生成测试脚本，不执行测试 - 用于批量生成用例
+        Args:
+            user_query: 用户查询
+            target_url: 目标URL
+            auto_detect_captcha: 是否自动检测验证码
+        Returns:
+            包含脚本的字典
+        """
+        result = {
+            "status": "success",
+            "actions": [],
+            "script": "",
+            "test_name": "",
+            "error": None
+        }
+
+        try:
+            print("\n===== 开始生成测试脚本 =====")
+            print(f"用户查询: {user_query}")
+            print(f"目标URL: {target_url}")
+
+            # 步骤1: 获取页面内容（截图和HTML）
+            print("\n步骤1: 获取页面内容...")
+            page_content = await test_generator.get_page_content(target_url)
+            print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+
+            # 步骤2: 分析页面内容
+            print("\n步骤2: 分析页面内容...")
+            page_analysis = await test_generator.analyze_page_content(page_content, user_query)
+            print(f"✅ 页面类型: {page_analysis.get('page_type', 'N/A')}")
+
+            # 步骤3: 基于页面分析生成操作步骤
+            print("\n步骤3: 生成操作步骤...")
+            actions = await self._generate_actions_with_context(
+                user_query, target_url, page_analysis
+            )
+            result["actions"] = actions
+            print(f"✅ 生成了 {len(actions)} 个操作步骤")
+
+            # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
+            print("\n步骤4: 生成完整测试脚本...")
+            final_script = await self._generate_complete_script(
+                target_url, actions, auto_detect_captcha, page_content.get('html', '')
+            )
+            result["script"] = final_script
+            print("✅ 脚本生成完成")
+
+            # 步骤5: 生成测试名称
+            print("\n步骤5: 生成测试名称...")
+            test_name = await bailian_client.generate_test_name(user_query, actions)
+            result["test_name"] = test_name
+            print(f"✅ 生成测试名称: {test_name}")
+
+            print("\n===== 测试脚本生成完成 =====")
+            return result
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            result["status"] = "error"
+            result["error"] = str(e)
+            print(f"\n❌ 生成脚本时出现错误: {str(e)}")
+            print(f"\n错误详情:\n{error_detail}")
+            return result
+
     async def execute_workflow(
         self,
         user_query: str,

@@ -218,7 +218,7 @@ async def generate_scenario_cases(
                 scenario.target_url
             )
 
-            # 生成测试脚本
+            # 生成测试脚本（只生成，不执行，避免重复打开浏览器）
             print(f"   Generating script for test case: {case_data['name']}")
             # 从全局配置读取是否自动检测验证码
             auto_detect_config = await db.execute(
@@ -229,7 +229,7 @@ async def generate_scenario_cases(
             if config and config.config_value:
                 auto_detect_captcha = config.config_value.lower() == "true"
             print(f"   Auto detect captcha from config: {auto_detect_captcha}")
-            script_result = await test_executor.execute_workflow(
+            script_result = await test_executor.generate_script_only(
                 case_data["user_query"],
                 scenario.target_url,
                 auto_detect_captcha=auto_detect_captcha
