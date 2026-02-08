@@ -3,6 +3,7 @@ import sys
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 from .core.config import settings
@@ -160,7 +161,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     traceback_str = traceback.format_exc()
     print(traceback_str)
     logger.error(traceback_str)
-    return {"error": f"Internal Server Error: {str(exc)}"}
+    return JSONResponse(
+        status_code=500,
+        content={"error": f"Internal Server Error: {str(exc)}"}
+    )
 
 if __name__ == "__main__":
     import uvicorn
