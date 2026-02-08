@@ -12,6 +12,7 @@ import nest_asyncio
 from ..generator.test_generator import test_generator
 from ..captcha.captcha_service import captcha_service
 from ..llm.bailian_client import bailian_client
+from ..computer_use.computer_use_service import computer_use_service
 
 
 class TestExecutor:
@@ -471,6 +472,289 @@ async def test_generated():
             await asyncio.sleep(5)
             
             # Close browser
+            print("[TEST] Closing browser")
+            await browser.close()
+            print("[TEST] Test completed")
+    except Exception as e:
+        print(f"[TEST] FATAL ERROR: {{e}}")
+        print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+        if browser:
+            try:
+                await browser.close()
+            except:
+                pass
+        raise
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
+'''
+        return script
+
+    async def generate_script_with_computer_use(
+        self,
+        user_query: str,
+        target_url: str,
+        auto_detect_captcha: bool = False
+    ) -> Dict[str, Any]:
+        """
+        使用 Computer-Use 方案生成测试脚本（基于截图 + 坐标定位）
+        Args:
+            user_query: 用户查询
+            target_url: 目标URL
+            auto_detect_captcha: 是否自动检测验证码
+        Returns:
+            包含脚本的字典
+        """
+        result = {
+            "status": "success",
+            "actions": [],
+            "script": "",
+            "test_name": "",
+            "error": None
+        }
+
+        try:
+            print("\n===== 开始使用 Computer-Use 方案生成测试脚本 =====")
+            print(f"用户查询: {user_query}")
+            print(f"目标URL: {target_url}")
+
+            # 步骤1: 获取页面内容（截图和HTML）
+            print("\n步骤1: 获取页面内容...")
+            page_content = await test_generator.get_page_content(target_url)
+            print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+
+            # 步骤2: 分析页面内容
+            print("\n步骤2: 分析页面内容...")
+            page_analysis = await test_generator.analyze_page_content(page_content, user_query)
+            print(f"✅ 页面类型: {page_analysis.get('page_type', 'N/A')}")
+
+            # 步骤3: 基于页面分析生成操作步骤
+            print("\n步骤3: 生成操作步骤...")
+            actions = await self._generate_actions_with_context(
+                user_query, target_url, page_analysis
+            )
+            result["actions"] = actions
+            print(f"✅ 生成了 {len(actions)} 个操作步骤")
+
+            # 步骤4: 使用 Computer-Use 方案生成脚本
+            print("\n步骤4: 使用 Computer-Use 方案生成完整测试脚本...")
+            final_script = await self._generate_computer_use_script(
+                target_url, actions, auto_detect_captcha
+            )
+            result["script"] = final_script
+            print("✅ 脚本生成完成")
+
+            # 步骤5: 生成测试名称
+            print("\n步骤5: 生成测试名称...")
+            test_name = await bailian_client.generate_test_name(user_query, actions)
+            result["test_name"] = test_name
+            print(f"✅ 生成测试名称: {test_name}")
+
+            print("\n===== Computer-Use 测试脚本生成完成 =====")
+            return result
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            result["status"] = "error"
+            result["error"] = str(e)
+            print(f"\n❌ 生成脚本时出现错误: {str(e)}")
+            print(f"\n错误详情:\n{error_detail}")
+            return result
+
+    async def _generate_computer_use_script(
+        self,
+        target_url: str,
+        actions: list,
+        auto_detect_captcha: bool = False
+    ) -> str:
+        """
+        使用 Computer-Use 方案生成测试脚本
+        Args:
+            target_url: 目标URL
+            actions: 操作列表
+            auto_detect_captcha: 是否自动检测验证码
+        Returns:
+            完整的测试脚本
+        """
+        print(f"\n   使用 Computer-Use 方案生成脚本...")
+        print(f"   目标URL: {target_url}")
+        print(f"   操作数量: {len(actions)}")
+
+        # 获取浏览器无头模式配置
+        browser_headless = False
+        from ...core.database import get_db
+        from ...models.global_config import GlobalConfig, ConfigKeys
+        from sqlalchemy import select
+
+        async for db in get_db():
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.BROWSER_HEADLESS)
+            )
+            config = result.scalar_one_or_none()
+            if config:
+                browser_headless = config.config_value.lower() == "true"
+            break
+
+        # 构建操作代码
+        action_codes = []
+
+        # 添加导航后的延迟
+        action_codes.append("                # 等待页面加载")
+        action_codes.append("                await page.wait_for_timeout(2000)")
+
+        # 如果需要自动检测验证码，添加验证码处理代码
+        if auto_detect_captcha:
+            from ...core.config import settings
+            api_key = settings.BAILIAN_API_KEY
+            base_url = settings.BAILIAN_BASE_URL
+            vl_model = settings.BAILIAN_VL_MODEL
+
+            action_codes.append(f"                # 自动检测并处理验证码")
+            action_codes.append(f"                try:")
+            action_codes.append(f"                    captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
+            action_codes.append(f"                    if await captcha_img.is_visible(timeout=3000):")
+            action_codes.append(f"                        print('检测到验证码')")
+            action_codes.append(f"                        captcha_bytes = await captcha_img.screenshot()")
+            action_codes.append(f"                        import base64")
+            action_codes.append(f"                        captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
+            action_codes.append(f"")
+            action_codes.append(f"                        import openai")
+            action_codes.append(f"                        client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
+            action_codes.append(f"")
+            action_codes.append(f"                        response = client.chat.completions.create(")
+            action_codes.append(f"                            model='{vl_model}',")
+            action_codes.append(f"                            messages=[")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"system\",")
+            action_codes.append(f"                                    \"content\": \"你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。\"")
+            action_codes.append(f"                                }},")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"user\",")
+            action_codes.append(f"                                    \"content\": [")
+            action_codes.append(f"                                        {{\"type\": \"text\", \"text\": \"请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。\"}},")
+            action_codes.append(f"                                        {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{captcha_base64}}\"}}}}")
+            action_codes.append(f"                                    ]")
+            action_codes.append(f"                                }}")
+            action_codes.append(f"                            ],")
+            action_codes.append(f"                            temperature=0.0,")
+            action_codes.append(f"                            max_tokens=50")
+            action_codes.append(f"                        )")
+            action_codes.append(f"")
+            action_codes.append(f"                        captcha_text = response.choices[0].message.content.strip()")
+            action_codes.append(f"                        print(f'识别到验证码: {{captcha_text}}')")
+            action_codes.append(f"")
+            action_codes.append(f"                        captcha_input = page.locator('input[name*=\"captcha\"], input[id*=\"captcha\"], input[placeholder*=\"验证码\"]').first")
+            action_codes.append(f"                        if await captcha_input.is_visible(timeout=3000):")
+            action_codes.append(f"                            await captcha_input.fill(captcha_text)")
+            action_codes.append(f"                            print('验证码已填写')")
+            action_codes.append(f"                except Exception as e:")
+            action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
+            action_codes.append(f"                    pass")
+
+        # 使用 Computer-Use 方案为每个操作生成代码
+        print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
+
+        # 启动浏览器进行截图分析
+        from playwright.async_api import async_playwright
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=browser_headless)
+            page = await browser.new_page()
+            await page.goto(target_url)
+            await page.wait_for_load_state("networkidle")
+            await asyncio.sleep(2)
+
+            for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
+                is_last = i == len(actions) - 1
+
+                # 如果启用了自动验证码检测，跳过验证码相关的操作
+                if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
+                    print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
+                    continue
+
+                print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
+
+                # 使用 Computer-Use 服务分析页面并生成操作
+                action_result = await computer_use_service.analyze_page_and_generate_action(
+                    page=page,
+                    action_description=action
+                )
+
+                if not action_result.get("element_found"):
+                    print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                    continue
+
+                # 生成代码
+                action_code = computer_use_service.generate_playwright_code_from_coordinates(
+                    action=action_result.get("action", "click"),
+                    coordinates=action_result.get("coordinates", {}),
+                    is_last=is_last
+                )
+
+                print(f"   生成的代码:\n{action_code}")
+
+                # 添加操作注释和代码
+                action_codes.append(f"                # Action {i}: {action}")
+                action_codes.append(f"                print('[TEST] Action {i} started')")
+
+                for line in action_code.strip().split('\n'):
+                    action_codes.append(f"                {line}")
+
+                action_codes.append("                await asyncio.sleep(3)")
+                action_codes.append(f"                print('[TEST] Action {i} completed')")
+
+                # 执行操作以便进行下一步截图分析
+                await computer_use_service.execute_action_with_coordinates(page, action_result)
+
+            await browser.close()
+
+        actions_str = "\n".join(action_codes)
+
+        # 生成完整脚本
+        script = f'''import pytest
+from playwright.async_api import async_playwright, expect
+import asyncio
+import traceback
+
+@pytest.mark.asyncio
+async def test_generated():
+    print("[TEST] Test started")
+    browser = None
+    try:
+        async with async_playwright() as p:
+            print("[TEST] Launching browser")
+            browser = await p.chromium.launch(headless={browser_headless})
+            page = await browser.new_page()
+            print("[TEST] Browser launched")
+
+            # Action 0: Navigate to target page
+            print("[TEST] Navigating to: {target_url}")
+            await page.goto("{target_url}")
+            print("[TEST] Page loaded")
+            
+            await page.wait_for_load_state("networkidle")
+            print("[TEST] Page network idle")
+            
+            await asyncio.sleep(3)
+            print("[TEST] Initial wait completed")
+            
+            try:
+                # Execute all actions
+{actions_str}
+            except Exception as e:
+                print(f"[TEST] ERROR during actions: {{e}}")
+                print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+                try:
+                    await page.screenshot(path="error_screenshot.png")
+                    print("[TEST] Screenshot saved to error_screenshot.png")
+                except:
+                    pass
+                raise
+
+            print("[TEST] Final wait before closing")
+            await asyncio.sleep(5)
+            
             print("[TEST] Closing browser")
             await browser.close()
             print("[TEST] Test completed")
