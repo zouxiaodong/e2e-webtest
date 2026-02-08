@@ -229,11 +229,32 @@ async def generate_scenario_cases(
             if config and config.config_value:
                 auto_detect_captcha = config.config_value.lower() == "true"
             print(f"   Auto detect captcha from config: {auto_detect_captcha}")
-            script_result = await test_executor.generate_script_only(
-                case_data["user_query"],
-                scenario.target_url,
-                auto_detect_captcha=auto_detect_captcha
+
+            # 从全局配置读取是否使用 Computer-Use 方案
+            use_computer_use_config = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.USE_COMPUTER_USE)
             )
+            use_computer_use = False  # 默认不使用
+            config_cu = use_computer_use_config.scalar_one_or_none()
+            if config_cu and config_cu.config_value:
+                use_computer_use = config_cu.config_value.lower() == "true"
+            print(f"   Use Computer-Use from config: {use_computer_use}")
+
+            # 根据配置选择使用哪种方案
+            if use_computer_use:
+                print(f"   Using Computer-Use approach for: {case_data['name']}")
+                script_result = await test_executor.generate_script_with_computer_use(
+                    case_data["user_query"],
+                    scenario.target_url,
+                    auto_detect_captcha=auto_detect_captcha
+                )
+            else:
+                print(f"   Using HTML approach for: {case_data['name']}")
+                script_result = await test_executor.generate_script_only(
+                    case_data["user_query"],
+                    scenario.target_url,
+                    auto_detect_captcha=auto_detect_captcha
+                )
             script = script_result.get("script", "")
             print(f"   Script generated: {len(script)} chars")
 

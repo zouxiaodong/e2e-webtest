@@ -1,4 +1,4 @@
-﻿from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON
 from datetime import datetime
 from .test_case import Base
 
@@ -31,3 +31,4 @@ class ConfigKeys:
     AUTO_DETECT_CAPTCHA = "auto_detect_captcha"  # 自动检测验证码
     BROWSER_HEADLESS = "browser_headless"  # 浏览器无头模式
     BROWSER_TIMEOUT = "browser_timeout"  # 浏览器超时时间
+    USE_COMPUTER_USE = "use_computer_use"  # 使用 Computer-Use 方案（截图+坐标）
