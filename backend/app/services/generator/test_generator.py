@@ -694,6 +694,8 @@ class TestGenerator:
 6. 验证码字段通常在密码字段附近，查找包含"captcha"、"验证码"、"code"等关键词的输入框
 7. **选择器必须精确匹配单个元素**：如果存在多个相似的输入框（如用户名和验证码），请使用更具体的选择器，如input[name="username"]、input[id="xxx"]、input[placeholder="用户名"]等，避免使用过于宽泛的选择器如input[type='text']
 8. **优先使用name、id、placeholder属性**来定位元素，这些属性通常更稳定且唯一
+9. **如果无法确定唯一选择器，必须使用 `.first` 属性**：例如 `page.locator("input[type='text']").first` 或 `page.get_by_placeholder("用户名").first`
+10. **严禁使用可能匹配多个元素的选择器而不加 `.first`**，这会导致测试失败
 
 ---
 <Previous Actions>:
