@@ -51,9 +51,15 @@ class LLMLogger:
                 ('</' in content_str or '/>' in content_str or '<html' in content_str.lower()))
 
     def log_request(self, model: str, messages, **kwargs):
+        import time
         self.logger.info('=' * 80)
         self.logger.info(f'LLM REQUEST | Model: {model}')
         self.logger.debug(f'Messages count: {len(messages)}')
+        
+        # 创建请求专属的日志目录
+        request_time = time.strftime('%Y%m%d_%H%M%S')
+        request_dir = log_dir / f'request_{request_time}'
+        request_dir.mkdir(exist_ok=True)
         
         for i, msg in enumerate(messages):
             role = msg.get('role', 'unknown')
@@ -77,14 +83,29 @@ class LLMLogger:
                         truncated_content.append(item)
                 self.logger.debug(f'Content: {truncated_content}')
             elif self._is_html_content(content):
-                # HTML内容，只输出长度信息，不输出具体内容
+                # HTML内容，保存到单独文件
                 content_length = len(content)
-                # 统计base64图片数量
                 base64_count = len(re.findall(r'data:image/[^;]+;base64,', content))
-                self.logger.debug(f'Content: [HTML content, length: {content_length} chars, base64 images: {base64_count}]')
+                
+                # 保存HTML内容到文件
+                html_file = request_dir / f'message_{i+1}_{role}.html'
+                try:
+                    # 截断base64图片数据以减小文件大小
+                    truncated_html = self._truncate_base64_in_html(content)
+                    with open(html_file, 'w', encoding='utf-8') as f:
+                        f.write(truncated_html)
+                    self.logger.debug(f'Content: [HTML content, length: {content_length} chars, base64 images: {base64_count}, saved to: {html_file}]')
+                except Exception as e:
+                    self.logger.debug(f'Content: [HTML content, length: {content_length} chars, base64 images: {base64_count}, save failed: {e}]')
             else:
-                # 普通文本内容
-                self.logger.debug(f'Content: {self._truncate_content(content, 500)}')
+                # 普通文本内容，也保存到文件
+                text_file = request_dir / f'message_{i+1}_{role}.txt'
+                try:
+                    with open(text_file, 'w', encoding='utf-8') as f:
+                        f.write(str(content))
+                    self.logger.debug(f'Content: {self._truncate_content(content, 500)} [full content saved to: {text_file}]')
+                except Exception as e:
+                    self.logger.debug(f'Content: {self._truncate_content(content, 500)} [save failed: {e}]')
             
             self.logger.debug(f'--- End Message {i+1} ---')
         
