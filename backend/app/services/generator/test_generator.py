@@ -696,6 +696,8 @@ class TestGenerator:
 8. **优先使用name、id、placeholder属性**来定位元素，这些属性通常更稳定且唯一
 9. **如果无法确定唯一选择器，必须使用 `.first` 属性**：例如 `page.locator("input[type='text']").first` 或 `page.get_by_placeholder("用户名").first`
 10. **严禁使用可能匹配多个元素的选择器而不加 `.first`**，这会导致测试失败
+11. **点击按钮时优先使用 `page.get_by_role("button", name="xxx")` 或 `page.locator("button:has-text('xxx')")`**，避免使用 `page.get_by_text()` 因为文本可能出现在多个地方
+12. **对于登录按钮，使用 `page.locator("button[type='submit']").first` 或 `page.get_by_role("button", name="登录")`**
 
 ---
 <Previous Actions>:
