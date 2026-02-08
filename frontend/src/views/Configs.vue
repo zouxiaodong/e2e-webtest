@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <div class="config-container">
     <el-card>
       <template #header>
@@ -69,6 +69,11 @@
           <div class="form-tip">关闭后可以看到浏览器运行过程</div>
         </el-form-item>
 
+        <el-form-item label="使用 Computer-Use">
+          <el-switch v-model="form.use_computer_use" />
+          <div class="form-tip">使用截图+坐标定位方案（更稳定但成本更高，需要VL模型支持）</div>
+        </el-form-item>
+
         <el-form-item label="浏览器超时">
           <el-input-number 
             v-model="form.browser_timeout" 
@@ -108,6 +113,7 @@ const form = ref({
   captcha_input_selector: '',
   auto_detect_captcha: false,
   browser_headless: true,
+  use_computer_use: false,
   browser_timeout: 30000
 })
 

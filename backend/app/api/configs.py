@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update
 from typing import List
@@ -49,6 +49,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         captcha_input_selector=config_dict.get(ConfigKeys.CAPTCHA_INPUT_SELECTOR),
         auto_detect_captcha=config_dict.get(ConfigKeys.AUTO_DETECT_CAPTCHA, "false") == "true",
         browser_headless=config_dict.get(ConfigKeys.BROWSER_HEADLESS, "true") == "true",
+        use_computer_use=config_dict.get(ConfigKeys.USE_COMPUTER_USE, "false") == "true",
         browser_timeout=int(config_dict.get(ConfigKeys.BROWSER_TIMEOUT, "30000"))
     )
 
@@ -70,6 +71,7 @@ async def update_settings(
         (ConfigKeys.CAPTCHA_INPUT_SELECTOR, settings.captcha_input_selector, "验证码输入框选择器", "string"),
         (ConfigKeys.AUTO_DETECT_CAPTCHA, str(settings.auto_detect_captcha).lower(), "自动检测验证码", "boolean"),
         (ConfigKeys.BROWSER_HEADLESS, str(settings.browser_headless).lower(), "浏览器无头模式", "boolean"),
+        (ConfigKeys.USE_COMPUTER_USE, str(settings.use_computer_use).lower(), "使用Computer-Use方案", "boolean"),
         (ConfigKeys.BROWSER_TIMEOUT, str(settings.browser_timeout), "浏览器超时时间", "number"),
     ]
     
