@@ -661,10 +661,17 @@ if __name__ == "__main__":
         def run_playwright_in_thread():
             """在单独线程中运行 Playwright"""
             import asyncio
+            import sys
             from playwright.async_api import async_playwright
 
             # 在子线程中创建新的事件循环
-            loop = asyncio.new_event_loop()
+            # 在 Windows 上使用 ProactorEventLoop 支持子进程
+            if sys.platform == 'win32':
+                loop = asyncio.ProactorEventLoop()
+                print(f"   子线程使用 ProactorEventLoop: {loop.__class__.__name__}")
+            else:
+                loop = asyncio.new_event_loop()
+                print(f"   子线程使用默认事件循环: {loop.__class__.__name__}")
             asyncio.set_event_loop(loop)
 
             async def main():
