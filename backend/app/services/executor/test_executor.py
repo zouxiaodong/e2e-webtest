@@ -657,87 +657,16 @@ if __name__ == "__main__":
 
         import concurrent.futures
 
-        def run_playwright_in_process():
-            """在单独进程中运行 Playwright"""
-            import sys
-            import os
-            
-            # 添加项目根目录到 Python 路径
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-            
-            from playwright.sync_api import sync_playwright
-
-            collected_codes = []
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=browser_headless)
-                page = browser.new_page()
-                page.goto(target_url)
-                page.wait_for_load_state("networkidle")
-                import time
-                time.sleep(2)
-
-                # 导入 ComputerUseService
-                from app.services.computer_use.computer_use_service import computer_use_service
-
-                for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
-                    is_last = i == len(actions) - 1
-
-                    # 如果启用了自动验证码检测，跳过验证码相关的操作
-                    if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
-                        print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
-                        continue
-
-                    print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
-
-                    # 使用 Computer-Use 服务分析页面并生成操作
-                    # 注意：这里需要使用同步版本的方法
-                    import asyncio
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    # 分析页面并生成操作
-                    action_result = loop.run_until_complete(
-                        computer_use_service.analyze_page_and_generate_action(
-                            page=page,
-                            action_description=action
-                        )
-                    )
-
-                    if not action_result.get("element_found"):
-                        print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                        continue
-
-                    # 生成代码
-                    action_code = computer_use_service.generate_playwright_code_from_coordinates(
-                        action=action_result.get("action", "click"),
-                        coordinates=action_result.get("coordinates", {}),
-                        is_last=is_last
-                    )
-
-                    print(f"   生成的代码:\n{action_code}")
-
-                    # 收集操作代码
-                    code_lines = []
-                    code_lines.append(f"                # Action {i}: {action}")
-                    code_lines.append(f"                print('[TEST] Action {i} started')")
-                    for line in action_code.strip().split('\n'):
-                        code_lines.append(f"                {line}")
-                    code_lines.append("                await asyncio.sleep(3)")
-                    code_lines.append(f"                print('[TEST] Action {i} completed')")
-
-                    collected_codes.extend(code_lines)
-
-                    # 执行操作以便进行下一步截图分析
-                    loop.run_until_complete(
-                        computer_use_service.execute_action_with_coordinates(page, action_result)
-                    )
-
-                browser.close()
-                return collected_codes
-
         # 在单独的进程中运行
+        from .playwright_processor import process_playwright_task
+        task_data = {
+            'target_url': target_url,
+            'actions': actions,
+            'browser_headless': browser_headless,
+            'auto_detect_captcha': auto_detect_captcha
+        }
         with concurrent.futures.ProcessPoolExecutor() as executor:
-            future = executor.submit(run_playwright_in_process)
+            future = executor.submit(process_playwright_task, task_data)
             collected_codes = future.result()
 
         # 将收集的代码添加到 action_codes
