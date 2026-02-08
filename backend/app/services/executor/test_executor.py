@@ -656,9 +656,21 @@ if __name__ == "__main__":
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
         # 启动浏览器进行截图分析
+        # 注意：在 Windows 上需要使用 nest_asyncio 来支持嵌套事件循环
+        import nest_asyncio
+        nest_asyncio.apply()
+
         from playwright.async_api import async_playwright
 
-        async with async_playwright() as p:
+        # 获取或创建事件循环
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        p = await async_playwright().start()
+        try:
             browser = await p.chromium.launch(headless=browser_headless)
             page = await browser.new_page()
             await page.goto(target_url)
@@ -708,6 +720,8 @@ if __name__ == "__main__":
                 await computer_use_service.execute_action_with_coordinates(page, action_result)
 
             await browser.close()
+        finally:
+            await p.stop()
 
         actions_str = "\n".join(action_codes)
 
