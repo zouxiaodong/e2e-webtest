@@ -239,9 +239,9 @@ class TestExecutor:
         # 构建操作代码
         action_codes = []
 
-        # 添加导航后的延迟（使用4空格缩进，因为模板中try块已有12空格）
-        action_codes.append("    # 等待页面加载")
-        action_codes.append("    await page.wait_for_timeout(2000)")
+        # 添加导航后的延迟（使用16空格缩进）
+        action_codes.append("                # 等待页面加载")
+        action_codes.append("                await page.wait_for_timeout(2000)")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         captcha_handler_code = ""
@@ -252,52 +252,52 @@ class TestExecutor:
             base_url = settings.BAILIAN_BASE_URL
             vl_model = settings.BAILIAN_VL_MODEL
 
-            # 添加验证码处理代码（使用4空格缩进，因为模板中try块已有12空格）
-            action_codes.append(f"    # 自动检测并处理验证码")
-            action_codes.append(f"    try:")
-            action_codes.append(f"        # 检查是否存在验证码图片")
-            action_codes.append(f"        captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
-            action_codes.append(f"        if await captcha_img.is_visible(timeout=3000):")
-            action_codes.append(f"            print('检测到验证码')")
-            action_codes.append(f"            # 截取验证码图片")
-            action_codes.append(f"            captcha_bytes = await captcha_img.screenshot()")
-            action_codes.append(f"            import base64")
-            action_codes.append(f"            captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
+            # 添加验证码处理代码（使用16空格缩进）
+            action_codes.append(f"                # 自动检测并处理验证码")
+            action_codes.append(f"                try:")
+            action_codes.append(f"                    # 检查是否存在验证码图片")
+            action_codes.append(f"                    captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
+            action_codes.append(f"                    if await captcha_img.is_visible(timeout=3000):")
+            action_codes.append(f"                        print('检测到验证码')")
+            action_codes.append(f"                        # 截取验证码图片")
+            action_codes.append(f"                        captcha_bytes = await captcha_img.screenshot()")
+            action_codes.append(f"                        import base64")
+            action_codes.append(f"                        captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
             action_codes.append(f"")
-            action_codes.append(f"            # 调用LLM识别验证码")
-            action_codes.append(f"            import openai")
-            action_codes.append(f"            client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
+            action_codes.append(f"                        # 调用LLM识别验证码")
+            action_codes.append(f"                        import openai")
+            action_codes.append(f"                        client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
             action_codes.append(f"")
-            action_codes.append(f"            response = client.chat.completions.create(")
-            action_codes.append(f"                model='{vl_model}',")
-            action_codes.append(f"                messages=[")
-            action_codes.append(f"                    {{")
-            action_codes.append(f"                        \"role\": \"system\",")
-            action_codes.append(f"                        \"content\": \"你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。\"")
-            action_codes.append(f"                    }},")
-            action_codes.append(f"                    {{")
-            action_codes.append(f"                        \"role\": \"user\",")
-            action_codes.append(f"                        \"content\": [")
-            action_codes.append(f"                            {{\"type\": \"text\", \"text\": \"请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。\"}},")
-            action_codes.append(f"                            {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{captcha_base64}}\"}}}}")
-            action_codes.append(f"                        ]")
-            action_codes.append(f"                    }}")
-            action_codes.append(f"                ],")
-            action_codes.append(f"                temperature=0.0,")
-            action_codes.append(f"                max_tokens=50")
-            action_codes.append(f"            )")
+            action_codes.append(f"                        response = client.chat.completions.create(")
+            action_codes.append(f"                            model='{vl_model}',")
+            action_codes.append(f"                            messages=[")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"system\",")
+            action_codes.append(f"                                    \"content\": \"你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。\"")
+            action_codes.append(f"                                }},")
+            action_codes.append(f"                                {{")
+            action_codes.append(f"                                    \"role\": \"user\",")
+            action_codes.append(f"                                    \"content\": [")
+            action_codes.append(f"                                        {{\"type\": \"text\", \"text\": \"请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。\"}},")
+            action_codes.append(f"                                        {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{captcha_base64}}\"}}}}")
+            action_codes.append(f"                                    ]")
+            action_codes.append(f"                                }}")
+            action_codes.append(f"                            ],")
+            action_codes.append(f"                            temperature=0.0,")
+            action_codes.append(f"                            max_tokens=50")
+            action_codes.append(f"                        )")
             action_codes.append(f"")
-            action_codes.append(f"            captcha_text = response.choices[0].message.content.strip()")
-            action_codes.append(f"            print(f'识别到验证码: {{captcha_text}}')")
+            action_codes.append(f"                        captcha_text = response.choices[0].message.content.strip()")
+            action_codes.append(f"                        print(f'识别到验证码: {{captcha_text}}')")
             action_codes.append(f"")
-            action_codes.append(f"            # 查找验证码输入框并填写")
-            action_codes.append(f"            captcha_input = page.locator('input[name*=\"captcha\"], input[id*=\"captcha\"], input[placeholder*=\"验证码\"]').first")
-            action_codes.append(f"            if await captcha_input.is_visible(timeout=3000):")
-            action_codes.append(f"                await captcha_input.fill(captcha_text)")
-            action_codes.append(f"                print('验证码已填写')")
-            action_codes.append(f"    except Exception as e:")
-            action_codes.append(f"        print(f'验证码处理失败: {{e}}')")
-            action_codes.append(f"        pass  # 没有验证码或处理失败")
+            action_codes.append(f"                        # 查找验证码输入框并填写")
+            action_codes.append(f"                        captcha_input = page.locator('input[name*=\"captcha\"], input[id*=\"captcha\"], input[placeholder*=\"验证码\"]').first")
+            action_codes.append(f"                        if await captcha_input.is_visible(timeout=3000):")
+            action_codes.append(f"                            await captcha_input.fill(captcha_text)")
+            action_codes.append(f"                            print('验证码已填写')")
+            action_codes.append(f"                except Exception as e:")
+            action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
+            action_codes.append(f"                    pass  # 没有验证码或处理失败")
 
         # 为每个操作生成代码
         # 使用获取到的HTML内容作为DOM状态
@@ -324,18 +324,18 @@ class TestExecutor:
                 print(f"   生成的代码:\n{action_code}")
                 continue
 
-            # 添加操作注释和代码（使用4空格缩进，因为模板中try块已有12空格）
-            action_codes.append(f"    # Action {i}: {action}")
-            action_codes.append(f"    print('[TEST] Action {i} started')")
+            # 添加操作注释和代码（使用16空格缩进）
+            action_codes.append(f"                # Action {i}: {action}")
+            action_codes.append(f"                print('[TEST] Action {i} started')")
             print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
 
-            # 添加操作代码（缩进处理 - 4空格）
+            # 添加操作代码（缩进处理 - 16空格）
             for line in action_code.strip().split('\n'):
-                action_codes.append(f"    {line}")
+                action_codes.append(f"                {line}")
 
             # 添加3秒延迟（使用 asyncio.sleep 更明显）
-            action_codes.append("    await asyncio.sleep(3)")
-            action_codes.append(f"    print('[TEST] Action {i} completed')")
+            action_codes.append("                await asyncio.sleep(3)")
+            action_codes.append(f"                print('[TEST] Action {i} completed')")
 
             aggregated_actions += "\n" + action_code
 
