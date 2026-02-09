@@ -252,6 +252,12 @@ async def generate_scenario_cases(
                     auto_cookie_localstorage=auto_cookie_localstorage,
                     page_content=page_content
                 )
+            
+            # 检查脚本生成是否成功
+            if script_result.get("status") != "success":
+                print(f"   ❌ 脚本生成失败: {script_result.get('error', 'Unknown error')}")
+                continue  # 跳过这个测试用例
+            
             script = script_result.get("script", "")
             print(f"   Script generated: {len(script)} chars")
 
