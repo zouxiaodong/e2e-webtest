@@ -201,12 +201,15 @@ class TestGenerator:
                 "        html = await page.content()",
                 "        screenshot = await page.screenshot(full_page=False)",
                 "        title = await page.title()",
+                "        print('[调试] 页面已加载，等待60秒供您F12查看...', file=sys.stderr)",
+                "        await asyncio.sleep(60)",  # 等待60秒
                 "        await browser.close()",
                 "        return html, base64.b64encode(screenshot).decode('utf-8'), title",
                 "",
                 "if __name__ == \"__main__\":",
-                "    # 设置stdout的编码为utf-8，避免Unicode编码错误",
+                "    # 设置stdout和stderr的编码为utf-8，避免Unicode编码错误",
                 "    sys.stdout.reconfigure(encoding='utf-8')",
+                "    sys.stderr.reconfigure(encoding='utf-8')",
                 "    result = asyncio.run(fetch_page())",
                 "    html, screenshot, title = result",
                 "    print(json.dumps({'html': html, 'screenshot': 'data:image/png;base64,' + screenshot, 'title': title}, ensure_ascii=False))",
@@ -224,7 +227,7 @@ class TestGenerator:
                     [sys.executable, temp_script_path],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=120,  # 增加到120秒，给60秒查看时间
                     encoding='utf-8',
                     errors='replace'
                 )
