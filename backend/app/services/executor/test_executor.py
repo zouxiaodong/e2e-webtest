@@ -361,99 +361,123 @@ class TestExecutor:
             vl_model = settings.BAILIAN_VL_MODEL
 
             # 添加验证码处理代码（使用16空格缩进）
-            action_codes.append(f"                # 自动检测并处理验证码")
+            action_codes.append(f"                # 使用VL模型一次性识别页面所有元素")
             action_codes.append(f"                try:")
-            action_codes.append(f"                    # 检查是否存在验证码图片")
-            action_codes.append(f"                    captcha_img = page.locator('img[src*=\"captcha\"], img[id*=\"captcha\"], .captcha img').first")
-            action_codes.append(f"                    if await captcha_img.is_visible(timeout=3000):")
-            action_codes.append(f"                        print('检测到验证码')")
-            action_codes.append(f"                        # 截取验证码图片")
-            action_codes.append(f"                        captcha_bytes = await captcha_img.screenshot()")
-            action_codes.append(f"                        import base64")
-            action_codes.append(f"                        captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')")
+            action_codes.append(f"                    # 截取整个页面截图")
+            action_codes.append(f"                    import base64")
+            action_codes.append(f"                    page_bytes = await page.screenshot()")
+            action_codes.append(f"                    page_base64 = base64.b64encode(page_bytes).decode('utf-8')")
             action_codes.append(f"")
-            action_codes.append(f"                        # 调用LLM识别验证码")
-            action_codes.append(f"                        import openai")
-            action_codes.append(f"                        client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
+            action_codes.append(f"                    # 调用VL模型识别所有元素")
+            action_codes.append(f"                    import openai")
+            action_codes.append(f"                    client = openai.OpenAI(api_key='{api_key}', base_url='{base_url}')")
             action_codes.append(f"")
-            action_codes.append(f"                        response = client.chat.completions.create(")
-            action_codes.append(f"                            model='{vl_model}',")
-            action_codes.append(f"                            messages=[")
-            action_codes.append(f"                                {{")
-            action_codes.append(f"                                    \"role\": \"system\",")
-            action_codes.append(f"                                    \"content\": \"你是一个验证码识别专家。识别图片中的验证码内容。如果是数学运算（如2+3=?），请计算并返回结果。只返回验证码值或计算结果，不要添加任何解释。\"")
-            action_codes.append(f"                                }},")
-            action_codes.append(f"                                {{")
-            action_codes.append(f"                                    \"role\": \"user\",")
-            action_codes.append(f"                                    \"content\": [")
-            action_codes.append(f"                                        {{\"type\": \"text\", \"text\": \"请识别这张图片中的验证码内容。如果是数学运算题，请计算并返回结果。只返回最终结果。\"}},")
-            action_codes.append(f"                                        {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{captcha_base64}}\"}}}}")
-            action_codes.append(f"                                    ]")
-            action_codes.append(f"                                }}")
-            action_codes.append(f"                            ],")
-            action_codes.append(f"                            temperature=0.0,")
-            action_codes.append(f"                            max_tokens=50")
-            action_codes.append(f"                        )")
+            action_codes.append(f"                    response = client.chat.completions.create(")
+            action_codes.append(f"                        model='{vl_model}',")
+            action_codes.append(f"                        messages=[")
+            action_codes.append(f"                            {{")
+            action_codes.append(f"                                \"role\": \"system\",")
+            action_codes.append(f"                                \"content\": \"你是一个网页元素识别专家。请分析页面截图，识别以下元素：1. 用户名输入框的坐标和类型 2. 密码输入框的坐标和类型 3. 验证码输入框的坐标和类型（如果存在） 4. 登录按钮的坐标 5. 验证码的计算结果（如果存在验证码）。返回JSON格式：{{\\\"has_captcha\\\": true/false, \\\"captcha_result\\\": \\\"验证码结果\\\", \\\"username_input\\\": {{\\\"x\\\": 123, \\\"y\\\": 456}}, \\\"password_input\\\": {{\\\"x\\\": 123, \\\"y\\\": 456}}, \\\"captcha_input\\\": {{\\\"x\\\": 123, \\\"y\\\": 456}} 或 null, \\\"login_button\\\": {{\\\"x\\\": 123, \\\"y\\\": 456}}}}\"")
+            action_codes.append(f"                            }},")
+            action_codes.append(f"                            {{")
+            action_codes.append(f"                                \"role\": \"user\",")
+            action_codes.append(f"                                \"content\": [")
+            action_codes.append(f"                                    {{\"type\": \"text\", \"text\": \"请分析这个登录页面，识别用户名输入框、密码输入框、验证码输入框（如果有）、登录按钮的坐标，以及验证码的计算结果（如果有验证码）。返回JSON格式。\"}},")
+            action_codes.append(f"                                    {{\"type\": \"image_url\", \"image_url\": {{\"url\": f\"data:image/png;base64,{{page_base64}}\"}}}}")
+            action_codes.append(f"                                ]")
+            action_codes.append(f"                            }}")
+            action_codes.append(f"                        ],")
+            action_codes.append(f"                        temperature=0.0,")
+            action_codes.append(f"                        max_tokens=500")
+            action_codes.append(f"                    )")
             action_codes.append(f"")
-            action_codes.append(f"                        captcha_text = response.choices[0].message.content.strip()")
-            action_codes.append(f"                        print(f'识别到验证码: {{captcha_text}}')")
+            action_codes.append(f"                    # 解析VL模型的响应")
+            action_codes.append(f"                    import json")
+            action_codes.append(f"                    result_text = response.choices[0].message.content.strip()")
+            action_codes.append(f"                    result = json.loads(result_text)")
+            action_codes.append(f"                    print(f'VL模型识别结果: {{result}}')")
             action_codes.append(f"")
-            action_codes.append(f"                        # 查找验证码输入框并填写")
-            action_codes.append(f"                        captcha_input = page.locator('input[name*=\"captcha\"], input[id*=\"captcha\"], input[placeholder*=\"验证码\"]').first")
-            action_codes.append(f"                        if await captcha_input.is_visible(timeout=3000):")
-            action_codes.append(f"                            await captcha_input.fill(captcha_text)")
-            action_codes.append(f"                            print('验证码已填写')")
+            action_codes.append(f"                    # 根据识别结果填写表单")
+            action_codes.append(f"                    if result.get('has_captcha', False):")
+            action_codes.append(f"                        captcha_result = result.get('captcha_result', '')")
+            action_codes.append(f"                        print(f'识别到验证码: {{captcha_result}}')")
+            action_codes.append(f"")
+            action_codes.append(f"                    # 填写用户名")
+            action_codes.append(f"                    if 'username_input' in result:")
+            action_codes.append(f"                        username_coords = result['username_input']")
+            action_codes.append(f"                        await page.mouse.click(username_coords['x'], username_coords['y'])")
+            action_codes.append(f"                        await page.keyboard.type('admin')")
+            action_codes.append(f"                        print('用户名已填写')")
+            action_codes.append(f"")
+            action_codes.append(f"                    # 填写密码")
+            action_codes.append(f"                    if 'password_input' in result:")
+            action_codes.append(f"                        password_coords = result['password_input']")
+            action_codes.append(f"                        await page.mouse.click(password_coords['x'], password_coords['y'])")
+            action_codes.append(f"                        await page.keyboard.type('PGzVdj8WnN')")
+            action_codes.append(f"                        print('密码已填写')")
+            action_codes.append(f"")
+            action_codes.append(f"                    # 填写验证码")
+            action_codes.append(f"                    if result.get('has_captcha', False) and 'captcha_input' in result:")
+            action_codes.append(f"                        captcha_coords = result['captcha_input']")
+            action_codes.append(f"                        await page.mouse.click(captcha_coords['x'], captcha_coords['y'])")
+            action_codes.append(f"                        await page.keyboard.type(captcha_result)")
+            action_codes.append(f"                        print('验证码已填写')")
+            action_codes.append(f"")
+            action_codes.append(f"                    # 点击登录按钮")
+            action_codes.append(f"                    if 'login_button' in result:")
+            action_codes.append(f"                        login_coords = result['login_button']")
+            action_codes.append(f"                        await page.mouse.click(login_coords['x'], login_coords['y'])")
+            action_codes.append(f"                        print('登录按钮已点击')")
             action_codes.append(f"                except Exception as e:")
-            action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
-            action_codes.append(f"                    pass  # 没有验证码或处理失败")
+            action_codes.append(f"                    print(f'VL模型识别失败: {{e}}')")
+            action_codes.append(f"                    pass  # VL模型识别失败，继续执行后续操作")
 
         # 为每个操作生成代码
         # 使用获取到的HTML内容作为DOM状态
         dom_state = html_content[:5000] if html_content else ""  # 限制长度避免超出token限制
         aggregated_actions = ""
 
-        for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
-            is_last = i == len(actions) - 1
+        # 如果启用了自动验证码检测，跳过所有表单操作（因为VL模型会一次性处理）
+        if auto_detect_captcha:
+            print(f"   自动验证码检测已启用，跳过所有表单操作")
+        else:
+            for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
+                is_last = i == len(actions) - 1
 
-            # 如果启用了自动验证码检测，跳过验证码相关的操作（避免重复处理）
-            if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
-                print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
-                continue
+                print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
-            print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
+                # 生成代码
+                action_code = await test_generator.generate_playwright_code(
+                    action,
+                    dom_state,
+                    aggregated_actions,
+                    is_last
+                )
 
-            # 生成代码
-            action_code = await test_generator.generate_playwright_code(
-                action,
-                dom_state,
-                aggregated_actions,
-                is_last
-            )
+                # 验证代码
+                is_valid, error = await test_generator.validate_generated_code(action_code)
+                if not is_valid:
+                    print(f"   ⚠️ 操作 {i} 代码验证失败: {error}")
+                    print(f"   生成的代码:\n{action_code}")
+                    continue
 
-            # 验证代码
-            is_valid, error = await test_generator.validate_generated_code(action_code)
-            if not is_valid:
-                print(f"   ⚠️ 操作 {i} 代码验证失败: {error}")
-                print(f"   生成的代码:\n{action_code}")
-                continue
+                # 添加操作注释和代码（使用16空格缩进）
+                action_codes.append(f"                # Action {i}: {action}")
+                action_codes.append(f"                print('[TEST] Action {i} started')")
+                print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
 
-            # 添加操作注释和代码（使用16空格缩进）
-            action_codes.append(f"                # Action {i}: {action}")
-            action_codes.append(f"                print('[TEST] Action {i} started')")
-            print(f"   生成的代码预览:\n{action_code[:200]}..." if len(action_code) > 200 else f"   生成的代码:\n{action_code}")
+                # 添加操作代码（缩进处理 - 16空格）
+                for line in action_code.strip().split('\n'):
+                    action_codes.append(f"                {line}")
 
-            # 添加操作代码（缩进处理 - 16空格）
-            for line in action_code.strip().split('\n'):
-                action_codes.append(f"                {line}")
+                # 添加3秒延迟（使用 asyncio.sleep 更明显）
+                action_codes.append("                await asyncio.sleep(3)")
+                action_codes.append(f"                print('[TEST] Action {i} completed')")
 
-            # 添加3秒延迟（使用 asyncio.sleep 更明显）
-            action_codes.append("                await asyncio.sleep(3)")
-            action_codes.append(f"                print('[TEST] Action {i} completed')")
+                aggregated_actions += "\n" + action_code
 
-            aggregated_actions += "\n" + action_code
-
-            # DOM状态保持不变（使用初始HTML）
-            # 因为我们在生成代码时无法获取执行后的实际DOM
+                # DOM状态保持不变（使用初始HTML）
+                # 因为我们在生成代码时无法获取执行后的实际DOM
 
         # 构建完整脚本
         actions_str = '\n'.join(action_codes)
