@@ -324,15 +324,17 @@ class TestExecutor:
         action_codes.append("                # 等待页面加载")
         action_codes.append("                await page.wait_for_timeout(2000)")
 
-        # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
+        # 如果需要自动加载 Cookie/LocalStorage/SessionStorage，添加加载代码
         if auto_cookie_localstorage:
-            action_codes.append("                # 加载保存的 cookies 和 localStorage")
+            action_codes.append("                # 加载保存的 cookies、localStorage 和 sessionStorage")
             action_codes.append("                import os, json")
             action_codes.append("                cookie_file = 'saved_cookies.json'")
             action_codes.append("                ls_file = 'saved_localstorage.json'")
+            action_codes.append("                ss_file = 'saved_sessionstorage.json'")
             action_codes.append("                print(f'当前工作目录: {os.getcwd()}')")
             action_codes.append("                print(f'Cookie文件存在: {os.path.exists(cookie_file)}')")
             action_codes.append("                print(f'LocalStorage文件存在: {os.path.exists(ls_file)}')")
+            action_codes.append("                print(f'SessionStorage文件存在: {os.path.exists(ss_file)}')")
             action_codes.append("                if os.path.exists(cookie_file):")
             action_codes.append("                    with open(cookie_file, 'r', encoding='utf-8') as f:")
             action_codes.append("                        cookies = json.load(f)")
@@ -350,6 +352,17 @@ class TestExecutor:
             action_codes.append("                        print(f'LocalStorage解析失败，使用原始字符串: {{ls_data[:100]}}')")
             action_codes.append("                        await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data)")
             action_codes.append("                    print('LocalStorage 已加载')")
+            action_codes.append("                if os.path.exists(ss_file):")
+            action_codes.append("                    with open(ss_file, 'r', encoding='utf-8') as f:")
+            action_codes.append("                        ss_data = f.read()")
+            action_codes.append("                    try:")
+            action_codes.append("                        ss_data_obj = json.loads(ss_data)")
+            action_codes.append(f"                        print(f'SessionStorage数据: {{ss_data_obj}}')")
+            action_codes.append("                        await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data_obj)")
+            action_codes.append("                    except json.JSONDecodeError:")
+            action_codes.append("                        print(f'SessionStorage解析失败，使用原始字符串: {{ss_data[:100]}}')")
+            action_codes.append("                        await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data)")
+            action_codes.append("                    print('SessionStorage 已加载')")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         captcha_handler_code = ""
@@ -530,7 +543,7 @@ async def test_generated():
             print("[TEST] Final wait before closing")
             await asyncio.sleep(3)
             
-            # Save cookies and localStorage if enabled
+            # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
                 cookies = await page.context.cookies()
                 with open('saved_cookies.json', 'w', encoding='utf-8') as f:
@@ -540,6 +553,10 @@ async def test_generated():
                 with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
                     f.write(ls_data)
                 print('[TEST] LocalStorage saved')
+                ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
+                with open('saved_sessionstorage.json', 'w', encoding='utf-8') as f:
+                    f.write(ss_data)
+                print('[TEST] SessionStorage saved')
             
             # Close browser
             print("[TEST] Closing browser")
@@ -876,7 +893,7 @@ async def test_generated():
             print("[TEST] Final wait before closing")
             await asyncio.sleep(3)
             
-            # Save cookies and localStorage if enabled
+            # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
                 cookies = await page.context.cookies()
                 with open('saved_cookies.json', 'w', encoding='utf-8') as f:
@@ -886,6 +903,10 @@ async def test_generated():
                 with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
                     f.write(ls_data)
                 print('[TEST] LocalStorage saved')
+                ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
+                with open('saved_sessionstorage.json', 'w', encoding='utf-8') as f:
+                    f.write(ss_data)
+                print('[TEST] SessionStorage saved')
             
             print("[TEST] Closing browser")
             await browser.close()
