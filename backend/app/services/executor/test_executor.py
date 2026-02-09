@@ -336,7 +336,11 @@ class TestExecutor:
             action_codes.append("                if os.path.exists('saved_localstorage.json'):")
             action_codes.append("                    with open('saved_localstorage.json', 'r', encoding='utf-8') as f:")
             action_codes.append("                        ls_data = f.read()")
-            action_codes.append("                    await page.evaluate(f\"() => {{ localStorage.clear(); const data = {ls_data}; for (const key in data) {{ localStorage.setItem(key, data[key]); }} }}\")")
+            action_codes.append("                    try:")
+            action_codes.append("                        ls_data_obj = json.loads(ls_data)")
+            action_codes.append("                        await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data_obj)")
+            action_codes.append("                    except json.JSONDecodeError:")
+            action_codes.append("                        await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data)")
             action_codes.append("                    print('LocalStorage 已加载')")
 
         # 如果需要自动检测验证码，添加验证码处理代码
