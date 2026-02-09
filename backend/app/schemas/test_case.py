@@ -41,6 +41,7 @@ class TestScenarioBase(BaseModel):
     generation_strategy: GenerationStrategy = Field(GenerationStrategy.BASIC, description="生成策略")
     use_captcha: bool = Field(False, description="是否使用验证码")
     auto_cookie_localstorage: bool = Field(True, description="自动加载和保存 cookie/localstorage")
+    load_saved_storage: bool = Field(True, description="是否加载保存的 cookie/localstorage/sessionstorage")
 
 
 class TestScenarioCreate(TestScenarioBase):
@@ -58,6 +59,7 @@ class TestScenarioUpdate(BaseModel):
     status: Optional[str] = None
     use_captcha: Optional[bool] = None
     auto_cookie_localstorage: Optional[bool] = None
+    load_saved_storage: Optional[bool] = None
 
 
 class TestScenarioResponse(TestScenarioBase):
