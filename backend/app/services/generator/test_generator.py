@@ -452,13 +452,14 @@ class TestGenerator:
 1. 基于实际页面元素生成测试用例
 2. 用例应该是核心功能的主流程测试
 3. 使用页面中实际存在的表单字段和按钮
-4. 输入合理的数据
+4. **重要**：从场景描述中提取具体的测试数据值（如用户名、密码、验证码等），不要使用占位符或描述性文字
+5. 如果场景描述中包含了具体的值（如'admin'、'PGzVdj8WnN'等），必须使用这些具体值
 
 以JSON格式返回，包含以下字段：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象），包含实际的表单字段值
+- "test_data": 测试数据（JSON对象），包含实际的表单字段值（必须使用具体值，不要使用占位符）
 - "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0"）
 - "case_type": 用例类型（"positive"）
@@ -511,12 +512,14 @@ class TestGenerator:
 1. 一个正向测试用例（P0优先级）- 使用正确的数据
 2. 一个异常测试用例（P1优先级）- 使用错误数据（如空值、格式错误）
 3. 一个边界测试用例（P2优先级）- 使用边界值
+4. **重要**：从场景描述中提取具体的测试数据值（如用户名、密码、验证码等），不要使用占位符或描述性文字
+5. 如果场景描述中包含了具体的值（如'admin'、'PGzVdj8WnN'等），必须使用这些具体值
 
 以JSON数组格式返回，每个用例包含：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象），基于实际表单字段
+- "test_data": 测试数据（JSON对象），基于实际表单字段（必须使用具体值，不要使用占位符）
 - "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0", "P1", "P2"）
 - "case_type": 用例类型（"positive", "negative", "boundary"）
@@ -583,12 +586,14 @@ class TestGenerator:
 3. 边界测试用例（P2优先级）- 边界值（最大长度、最小值）
 4. 异常测试用例（P2优先级）- 特殊字符、SQL注入、XSS等
 5. 安全测试用例（P3优先级）- 如适用
+6. **重要**：从场景描述中提取具体的测试数据值（如用户名、密码、验证码等），不要使用占位符或描述性文字
+7. 如果场景描述中包含了具体的值（如'admin'、'PGzVdj8WnN'等），必须使用这些具体值
 
 以JSON数组格式返回，每个用例包含：
 - "name": 用例名称
 - "description": 用例描述
 - "user_query": 具体的测试需求描述
-- "test_data": 测试数据（JSON对象），基于实际表单字段
+- "test_data": 测试数据（JSON对象），基于实际表单字段（必须使用具体值，不要使用占位符）
 - "expected_result": 预期结果（JSON对象）
 - "priority": 优先级（"P0", "P1", "P2", "P3"）
 - "case_type": 用例类型（"positive", "negative", "boundary", "exception", "security"）
