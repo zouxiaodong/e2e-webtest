@@ -57,11 +57,12 @@ class TestGenerator:
 
         return cleaned_html.strip()
 
-    async def get_page_content(self, target_url: str) -> Dict[str, Any]:
+    async def get_page_content(self, target_url: str, load_saved_storage: bool = True) -> Dict[str, Any]:
             """
             使用 Playwright 打开页面并获取内容
             Args:
                 target_url: 目标URL
+                load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
             Returns:
                 包含页面 HTML、截图等信息
             """
@@ -135,8 +136,8 @@ class TestGenerator:
                 "",
             ]
             
-            # 如果配置了会话存储路径，添加加载cookies、localStorage、sessionStorage的代码
-            if session_storage_path:
+            # 如果配置了会话存储路径且需要加载，添加加载cookies、localStorage、sessionStorage的代码
+            if session_storage_path and load_saved_storage:
                 script_lines.extend([
                     f"        session_storage_path = '{session_storage_path}'",
                     "        cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')",
@@ -421,7 +422,8 @@ class TestGenerator:
         self,
         user_query: str,
         target_url: str,
-        generation_strategy: GenerationStrategy = GenerationStrategy.BASIC
+        generation_strategy: GenerationStrategy = GenerationStrategy.BASIC,
+        load_saved_storage: bool = True
     ) -> List[Dict[str, Any]]:
         """
         根据生成策略生成多个测试用例
@@ -429,13 +431,14 @@ class TestGenerator:
             user_query: 用户自然语言描述的场景
             target_url: 目标URL
             generation_strategy: 生成策略
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
         Returns:
             测试用例列表，每个用例包含名称、描述、优先级、类型等
         """
         print(f"正在分析页面: {target_url}")
         
         # 步骤1: 获取页面内容（使用 Playwright 打开页面）
-        page_content = await self.get_page_content(target_url)
+        page_content = await self.get_page_content(target_url, load_saved_storage)
         print(f"页面标题: {page_content.get('title', 'N/A')}")
         
         # 步骤2: 使用 VL 模型分析页面内容

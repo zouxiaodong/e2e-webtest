@@ -32,6 +32,7 @@ class TestExecutor:
         target_url: str,
         auto_detect_captcha: bool = False,
         auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True,
         page_content: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
@@ -40,6 +41,8 @@ class TestExecutor:
             user_query: 用户查询
             target_url: 目标URL
             auto_detect_captcha: 是否自动检测验证码
+            auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
             page_content: 页面内容（如果提供，则不重新获取）
         Returns:
             包含脚本的字典
@@ -81,7 +84,7 @@ class TestExecutor:
             # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
             print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, page_content.get('html', '')
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage, page_content.get('html', '')
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -295,6 +298,7 @@ class TestExecutor:
         actions: list,
         auto_detect_captcha: bool,
         auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True,
         html_content: str = ""
     ) -> str:
         """
@@ -303,6 +307,8 @@ class TestExecutor:
             target_url: 目标URL
             actions: 操作步骤列表
             auto_detect_captcha: 是否自动检测验证码
+            auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
         Returns:
             完整的测试脚本
         """
@@ -329,7 +335,7 @@ class TestExecutor:
         action_codes.append("                await page.wait_for_timeout(2000)")
 
         # 如果需要自动加载 Cookie/LocalStorage/SessionStorage，添加加载代码
-        if auto_cookie_localstorage:
+        if auto_cookie_localstorage and load_saved_storage:
             action_codes.append("                # 加载保存的 cookies、localStorage 和 sessionStorage")
             action_codes.append("                import os, json")
             
@@ -609,6 +615,7 @@ if __name__ == "__main__":
         target_url: str,
         auto_detect_captcha: bool = False,
         auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True,
         page_content: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
@@ -617,6 +624,8 @@ if __name__ == "__main__":
             user_query: 用户查询
             target_url: 目标URL
             auto_detect_captcha: 是否自动检测验证码
+            auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
             page_content: 页面内容（如果提供，则不重新获取）
         Returns:
             包含脚本的字典
@@ -658,7 +667,7 @@ if __name__ == "__main__":
             # 步骤4: 使用 Computer-Use 方案生成脚本
             print("\n步骤4: 使用 Computer-Use 方案生成完整测试脚本...")
             final_script = await self._generate_computer_use_script(
-                target_url, actions, auto_detect_captcha, auto_cookie_localstorage
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -686,7 +695,8 @@ if __name__ == "__main__":
         target_url: str,
         actions: list,
         auto_detect_captcha: bool = False,
-        auto_cookie_localstorage: bool = True
+        auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True
     ) -> str:
         """
         使用 Computer-Use 方案生成测试脚本
@@ -694,6 +704,8 @@ if __name__ == "__main__":
             target_url: 目标URL
             actions: 操作列表
             auto_detect_captcha: 是否自动检测验证码
+            auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
         Returns:
             完整的测试脚本
         """
@@ -724,7 +736,7 @@ if __name__ == "__main__":
         action_codes.append("                await page.wait_for_timeout(2000)")
 
         # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
-        if auto_cookie_localstorage:
+        if auto_cookie_localstorage and load_saved_storage:
             action_codes.append("                # 加载保存的 cookies 和 localStorage")
             action_codes.append("                import os, json")
             action_codes.append("                if os.path.exists('saved_cookies.json'):")

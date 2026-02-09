@@ -195,15 +195,20 @@ async def generate_scenario_cases(
 
         # 生成多个测试用例
         strategy = generation_strategy or scenario.generation_strategy
+        load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
+        print(f"   Load saved storage from scenario: {load_saved_storage}")
         test_cases_data = await test_generator.generate_multiple_test_cases(
             scenario.user_query,
             scenario.target_url,
-            strategy
+            strategy,
+            load_saved_storage
         )
 
         # 只获取一次页面内容，避免重复打开浏览器
         print(f"\n   Fetching page content once for all test cases...")
-        page_content = await test_generator.get_page_content(scenario.target_url)
+        load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
+        print(f"   Load saved storage from scenario: {load_saved_storage}")
+        page_content = await test_generator.get_page_content(scenario.target_url, load_saved_storage)
         print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
 
         # 为每个用例生成操作步骤和脚本
@@ -241,6 +246,7 @@ async def generate_scenario_cases(
                     scenario.target_url,
                     auto_detect_captcha=use_captcha,
                     auto_cookie_localstorage=auto_cookie_localstorage,
+                    load_saved_storage=load_saved_storage,
                     page_content=page_content
                 )
             else:
@@ -250,6 +256,7 @@ async def generate_scenario_cases(
                     scenario.target_url,
                     auto_detect_captcha=use_captcha,
                     auto_cookie_localstorage=auto_cookie_localstorage,
+                    load_saved_storage=load_saved_storage,
                     page_content=page_content
                 )
             

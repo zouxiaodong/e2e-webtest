@@ -87,6 +87,10 @@
           <el-switch v-model="createForm.auto_cookie_localstorage" />
           <div class="form-tip">开启后自动加载和保存 Cookie/LocalStorage</div>
         </el-form-item>
+        <el-form-item label="加载保存的Storage">
+          <el-switch v-model="createForm.load_saved_storage" />
+          <div class="form-tip">开启后加载之前保存的Cookie/LocalStorage/SessionStorage（登录场景建议关闭）</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
@@ -216,7 +220,8 @@ const createForm = ref({
   user_query: '',
   generation_strategy: 'basic',
   use_captcha: false,
-  auto_cookie_localstorage: true
+  auto_cookie_localstorage: true,
+  load_saved_storage: true
 })
 
 // 加载场景列表
@@ -258,7 +263,8 @@ const editScenario = async (scenario) => {
       user_query: scenario.user_query,
       generation_strategy: scenario.generation_strategy,
       use_captcha: scenario.use_captcha || false,
-      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? true : scenario.auto_cookie_localstorage
+      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? true : scenario.auto_cookie_localstorage,
+      load_saved_storage: scenario.load_saved_storage !== undefined ? true : scenario.load_saved_storage
     }
     createDialogVisible.value = true
   } catch (error) {
