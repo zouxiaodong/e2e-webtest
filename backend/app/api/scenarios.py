@@ -341,6 +341,10 @@ async def execute_scenario_cases(
     passed_count = 0
     failed_count = 0
 
+    # 获取场景的load_saved_storage配置
+    load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
+    print(f"   Load saved storage from scenario: {load_saved_storage}")
+    
     for test_case in test_cases:
         try:
             # 更新用例状态
@@ -351,16 +355,39 @@ async def execute_scenario_cases(
             )
             await db.commit()
 
-            # 优先使用已保存的脚本
-            if test_case.script and test_case.script.strip():
+            # 优先使用已保存的脚本，但如果load_saved_storage为False，需要重新生成脚本
+            if test_case.script and test_case.script.strip() and load_saved_storage:
                 print(f"   Using saved script for test case {test_case.id}")
                 execution_result = await test_executor.execute_saved_script(test_case.script)
             else:
-                print(f"   No saved script found, generating new script for test case {test_case.id}")
-                execution_result = await test_executor.execute_workflow(
+                if not load_saved_storage:
+                    print(f"   Regenerating script without loading saved storage for test case {test_case.id}")
+                else:
+                    print(f"   No saved script found, generating new script for test case {test_case.id}")
+                
+                # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
+                use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
+                auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
+                
+                # 重新生成脚本，传入load_saved_storage配置
+                script_result = await test_executor.generate_script_only(
                     test_case.user_query,
-                    test_case.target_url
+                    test_case.target_url,
+                    auto_detect_captcha=use_captcha,
+                    auto_cookie_localstorage=auto_cookie_localstorage,
+                    load_saved_storage=load_saved_storage
                 )
+                
+                if script_result.get("status") == "success":
+                    # 执行生成的脚本
+                    execution_result = await test_executor.execute_saved_script(script_result.get("script", ""))
+                    # 更新测试用例的脚本
+                    test_case.script = script_result.get("script", "")
+                else:
+                    execution_result = {
+                        "status": "error",
+                        "error": script_result.get("error", "Failed to generate script")
+                    }
 
             # 更新用例
             status = "completed" if execution_result.get("status") == "success" else "failed"
