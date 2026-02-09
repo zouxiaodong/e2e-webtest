@@ -2,17 +2,21 @@ import asyncio
 import io
 import re
 import sys
+import os
 from typing import Dict, Any, Optional, List
 from contextlib import redirect_stdout
 from datetime import datetime
 import pytest
 import ipytest
 import nest_asyncio
+from dotenv import load_dotenv
 
 from ..generator.test_generator import test_generator
 from ..captcha.captcha_service import captcha_service
 from ..llm.bailian_client import bailian_client
 from ..computer_use.computer_use_service import computer_use_service
+
+load_dotenv()
 
 
 class TestExecutor:
@@ -328,10 +332,21 @@ class TestExecutor:
         if auto_cookie_localstorage:
             action_codes.append("                # 加载保存的 cookies、localStorage 和 sessionStorage")
             action_codes.append("                import os, json")
-            action_codes.append("                cookie_file = 'saved_cookies.json'")
-            action_codes.append("                ls_file = 'saved_localstorage.json'")
-            action_codes.append("                ss_file = 'saved_sessionstorage.json'")
+            
+            # 获取会话存储路径
+            session_storage_path = os.getenv('SESSION_STORAGE_PATH', '')
+            if session_storage_path:
+                action_codes.append(f"                session_storage_path = '{session_storage_path}'")
+                action_codes.append("                cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')")
+                action_codes.append("                ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')")
+                action_codes.append("                ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')")
+            else:
+                action_codes.append("                cookie_file = 'saved_cookies.json'")
+                action_codes.append("                ls_file = 'saved_localstorage.json'")
+                action_codes.append("                ss_file = 'saved_sessionstorage.json'")
+            
             action_codes.append("                print(f'当前工作目录: {os.getcwd()}')")
+            action_codes.append("                print(f'Cookie文件路径: {cookie_file}')")
             action_codes.append("                print(f'Cookie文件存在: {os.path.exists(cookie_file)}')")
             action_codes.append("                print(f'LocalStorage文件存在: {os.path.exists(ls_file)}')")
             action_codes.append("                print(f'SessionStorage文件存在: {os.path.exists(ss_file)}')")
@@ -545,18 +560,29 @@ async def test_generated():
             
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
+                import os
+                session_storage_path = os.getenv('SESSION_STORAGE_PATH', '')
+                if session_storage_path:
+                    cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')
+                    ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')
+                    ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')
+                else:
+                    cookie_file = 'saved_cookies.json'
+                    ls_file = 'saved_localstorage.json'
+                    ss_file = 'saved_sessionstorage.json'
+                
                 cookies = await page.context.cookies()
-                with open('saved_cookies.json', 'w', encoding='utf-8') as f:
+                with open(cookie_file, 'w', encoding='utf-8') as f:
                     json.dump(cookies, f, ensure_ascii=False, indent=2)
-                print('[TEST] Cookies saved')
+                print(f'[TEST] Cookies saved to {{cookie_file}}')
                 ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
-                with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
+                with open(ls_file, 'w', encoding='utf-8') as f:
                     f.write(ls_data)
-                print('[TEST] LocalStorage saved')
+                print(f'[TEST] LocalStorage saved to {{ls_file}}')
                 ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
-                with open('saved_sessionstorage.json', 'w', encoding='utf-8') as f:
+                with open(ss_file, 'w', encoding='utf-8') as f:
                     f.write(ss_data)
-                print('[TEST] SessionStorage saved')
+                print(f'[TEST] SessionStorage saved to {{ss_file}}')
             
             # Close browser
             print("[TEST] Closing browser")
@@ -959,7 +985,7 @@ if __name__ == "__main__":
                     timeout=300,  # 5分钟超时
                     encoding='utf-8',
                     errors='replace',
-                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 设置工作目录为backend目录
+                    cwd=os.getcwd()  # 使用当前工作目录
                 )
             
             print("   等待测试执行完成（最多5分钟）...")

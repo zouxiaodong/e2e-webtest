@@ -1,6 +1,12 @@
 import asyncio
 import sys
+import os
 import uvicorn
+
+# 设置工作目录为backend目录
+backend_dir = os.path.dirname(os.path.abspath(__file__))
+os.chdir(backend_dir)
+print(f"📁 工作目录设置为: {backend_dir}")
 
 # 在 uvicorn 启动之前设置事件循环策略
 if sys.platform == 'win32':
