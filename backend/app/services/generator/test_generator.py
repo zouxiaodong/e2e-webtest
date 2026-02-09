@@ -119,6 +119,16 @@ class TestGenerator:
             load_dotenv()
             session_storage_path = os.getenv('SESSION_STORAGE_PATH', '')
             
+            # 添加调试日志
+            print(f"[DEBUG] load_saved_storage: {load_saved_storage}")
+            print(f"[DEBUG] session_storage_path from env: {session_storage_path}")
+            print(f"[DEBUG] session_storage_path exists: {os.path.exists(session_storage_path) if session_storage_path else False}")
+            
+            # 如果环境变量没有设置，使用默认路径
+            if not session_storage_path:
+                session_storage_path = os.path.join(os.getcwd(), 'session_storage')
+                print(f"[DEBUG] Using default session_storage_path: {session_storage_path}")
+            
             # 创建临时脚本文件
             # 构建脚本内容，避免f-string的格式说明符冲突
             script_lines = [
