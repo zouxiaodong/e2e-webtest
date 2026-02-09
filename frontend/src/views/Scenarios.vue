@@ -263,8 +263,8 @@ const editScenario = async (scenario) => {
       user_query: scenario.user_query,
       generation_strategy: scenario.generation_strategy,
       use_captcha: scenario.use_captcha || false,
-      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? true : scenario.auto_cookie_localstorage,
-      load_saved_storage: scenario.load_saved_storage !== undefined ? true : scenario.load_saved_storage
+      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? scenario.auto_cookie_localstorage : true,
+      load_saved_storage: scenario.load_saved_storage !== undefined ? scenario.load_saved_storage : true
     }
     createDialogVisible.value = true
   } catch (error) {
