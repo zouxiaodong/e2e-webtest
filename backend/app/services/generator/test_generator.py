@@ -139,18 +139,18 @@ class TestGenerator:
             # 如果配置了会话存储路径且需要加载，添加加载cookies、localStorage、sessionStorage的代码
             if session_storage_path and load_saved_storage:
                 script_lines.extend([
-                    f"        session_storage_path = '{session_storage_path}'",
+                    f"        session_storage_path = r'{session_storage_path}'",
                     "        cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')",
                     "        ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')",
                     "        ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')",
-                    "        print(f'Cookie文件路径: {cookie_file}')",
-                    "        print(f'Cookie文件存在: {os.path.exists(cookie_file)}')",
+                    "        print(f'Cookie文件路径: {cookie_file}', file=sys.stderr)",
+                    "        print(f'Cookie文件存在: {os.path.exists(cookie_file)}', file=sys.stderr)",
                     "        if os.path.exists(cookie_file):",
                     "            with open(cookie_file, 'r', encoding='utf-8') as f:",
                     "                cookies = json.load(f)",
-                    "            print(f'加载了 {len(cookies)} 个cookies')",
+                    "            print(f'加载了 {len(cookies)} 个cookies', file=sys.stderr)",
                     "            await page.context.add_cookies(cookies)",
-                    "            print('Cookies 已加载')",
+                    "            print('Cookies 已加载', file=sys.stderr)",
                     "        if os.path.exists(ls_file):",
                     "            with open(ls_file, 'r', encoding='utf-8') as f:",
                     "                ls_data = f.read()",
@@ -159,7 +159,7 @@ class TestGenerator:
                     "                await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data_obj)",
                     "            except json.JSONDecodeError:",
                     "                await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data)",
-                    "            print('LocalStorage 已加载')",
+                    "            print('LocalStorage 已加载', file=sys.stderr)",
                     "        if os.path.exists(ss_file):",
                     "            with open(ss_file, 'r', encoding='utf-8') as f:",
                     "                ss_data = f.read()",
@@ -168,7 +168,7 @@ class TestGenerator:
                     "                await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data_obj)",
                     "            except json.JSONDecodeError:",
                     "                await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data)",
-                    "            print('SessionStorage 已加载')",
+                    "            print('SessionStorage 已加载', file=sys.stderr)",
                     "",
                 ])
             
