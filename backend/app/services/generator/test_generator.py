@@ -112,6 +112,12 @@ class TestGenerator:
                     browser_headless = config.config_value.lower() == "true"
                 break
             
+            # 获取会话存储路径
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            session_storage_path = os.getenv('SESSION_STORAGE_PATH', '')
+            
             # 创建临时脚本文件
             # 构建脚本内容，避免f-string的格式说明符冲突
             script_lines = [
@@ -120,11 +126,52 @@ class TestGenerator:
                 "from playwright.async_api import async_playwright",
                 "import base64",
                 "import json",
+                "import os",
                 "",
                 "async def fetch_page():",
                 "    async with async_playwright() as p:",
                 f"        browser = await p.chromium.launch(headless={browser_headless})",
                 "        page = await browser.new_page()",
+                "",
+            ]
+            
+            # 如果配置了会话存储路径，添加加载cookies、localStorage、sessionStorage的代码
+            if session_storage_path:
+                script_lines.extend([
+                    f"        session_storage_path = '{session_storage_path}'",
+                    "        cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')",
+                    "        ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')",
+                    "        ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')",
+                    "        print(f'Cookie文件路径: {cookie_file}')",
+                    "        print(f'Cookie文件存在: {os.path.exists(cookie_file)}')",
+                    "        if os.path.exists(cookie_file):",
+                    "            with open(cookie_file, 'r', encoding='utf-8') as f:",
+                    "                cookies = json.load(f)",
+                    "            print(f'加载了 {len(cookies)} 个cookies')",
+                    "            await page.context.add_cookies(cookies)",
+                    "            print('Cookies 已加载')",
+                    "        if os.path.exists(ls_file):",
+                    "            with open(ls_file, 'r', encoding='utf-8') as f:",
+                    "                ls_data = f.read()",
+                    "            try:",
+                    "                ls_data_obj = json.loads(ls_data)",
+                    "                await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data_obj)",
+                    "            except json.JSONDecodeError:",
+                    "                await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data)",
+                    "            print('LocalStorage 已加载')",
+                    "        if os.path.exists(ss_file):",
+                    "            with open(ss_file, 'r', encoding='utf-8') as f:",
+                    "                ss_data = f.read()",
+                    "            try:",
+                    "                ss_data_obj = json.loads(ss_data)",
+                    "                await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data_obj)",
+                    "            except json.JSONDecodeError:",
+                    "                await page.evaluate(\"data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }\", ss_data)",
+                    "            print('SessionStorage 已加载')",
+                    "",
+                ])
+            
+            script_lines.extend([
                 f"        await page.goto(\"{target_url}\", wait_until=\"networkidle\", timeout=30000)",
                 "        html = await page.content()",
                 "        screenshot = await page.screenshot(full_page=False)",
@@ -139,7 +186,7 @@ class TestGenerator:
                 "    html, screenshot, title = result",
                 "    print(json.dumps({'html': html, 'screenshot': 'data:image/png;base64,' + screenshot, 'title': title}, ensure_ascii=False))",
                 ""
-            ]
+            ])
             script = "\n".join(script_lines)
             
             with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
