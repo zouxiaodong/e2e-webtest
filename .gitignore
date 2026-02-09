@@ -57,3 +57,14 @@ logs/
 *.tmp
 *.temp
 .cache/
+
+# Backend generated files
+backend/*.json
+backend/*.png
+backend/check_*.py
+backend/test_*.py
+backend/list_*.py
+backend/add_*.py
+
+# Trae
+.trae/
