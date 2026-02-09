@@ -157,6 +157,7 @@ def process_playwright_task(task_data):
         actions = task_data.get('actions', [])
         browser_headless = task_data.get('browser_headless', True)
         auto_detect_captcha = task_data.get('auto_detect_captcha', False)
+        load_saved_storage = task_data.get('load_saved_storage', True)
 
         # 获取 VL 模型配置
         from app.core.config import settings

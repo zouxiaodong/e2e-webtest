@@ -876,7 +876,8 @@ if __name__ == "__main__":
             'target_url': target_url,
             'actions': actions,
             'browser_headless': browser_headless,
-            'auto_detect_captcha': auto_detect_captcha
+            'auto_detect_captcha': auto_detect_captcha,
+            'load_saved_storage': load_saved_storage
         }
         with concurrent.futures.ProcessPoolExecutor() as executor:
             future = executor.submit(process_playwright_task, task_data)
