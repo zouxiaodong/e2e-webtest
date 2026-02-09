@@ -40,10 +40,10 @@
             <el-button size="small" @click="editScenario(row)">
               编辑
             </el-button>
-            <el-button size="small" @click="generateScenario(row)" :disabled="row.status === 'generating'">
+            <el-button size="small" @click="generateScenario(row)">
               生成用例
             </el-button>
-            <el-button size="small" type="success" @click="executeScenario(row)" :disabled="row.total_cases === 0">
+            <el-button size="small" type="success" @click="executeScenario(row)">
               执行
             </el-button>
             <el-button size="small" @click="viewScenario(row)">
