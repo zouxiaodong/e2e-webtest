@@ -168,14 +168,6 @@ async def generate_scenario_cases(
     if not scenario:
         raise HTTPException(status_code=404, detail="测试场景不存在")
 
-    # 更新场景状态为 generating
-    await db.execute(
-        update(TestScenario)
-        .where(TestScenario.id == scenario_id)
-        .values(status="generating")
-    )
-    await db.commit()
-
     try:
         # 先删除该场景下所有测试用例关联的测试报告
         print(f"   Deleting existing test reports for scenario {scenario_id}")
@@ -288,17 +280,6 @@ async def generate_scenario_cases(
         # 提交所有测试用例
         await db.commit()
 
-        # 更新场景状态为 completed
-        await db.execute(
-            update(TestScenario)
-            .where(TestScenario.id == scenario_id)
-            .values(
-                total_cases=len(generated_cases),
-                status="completed"
-            )
-        )
-        await db.commit()
-
         return {
             "message": f"成功生成 {len(generated_cases)} 个测试用例",
             "test_cases": generated_cases
@@ -308,19 +289,6 @@ async def generate_scenario_cases(
         # 回滚当前事务
         await db.rollback()
         
-        # 更新场景状态为失败
-        try:
-            await db.execute(
-                update(TestScenario)
-                .where(TestScenario.id == scenario_id)
-                .values(status="failed")
-            )
-            await db.commit()
-        except Exception as update_error:
-            # 如果更新状态也失败，继续回滚
-            await db.rollback()
-            print(f"Failed to update scenario status: {update_error}")
-
         # 记录详细错误
         import traceback
         error_detail = traceback.format_exc()
