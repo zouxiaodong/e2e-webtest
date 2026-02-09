@@ -197,102 +197,36 @@ async def generate_scenario_cases(
         load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
         print(f"   Load saved storage from scenario: {load_saved_storage}")
         
-        # 生成多个测试用例（内部会获取页面内容，并返回页面内容供后续使用）
-        strategy = generation_strategy or scenario.generation_strategy
-        test_cases_data, page_content = await test_generator.generate_multiple_test_cases(
-            scenario.user_query,
-            scenario.target_url,
-            strategy,
-            load_saved_storage
-        )
-        print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
-
-        # 为每个用例生成操作步骤和脚本
-        generated_cases = []
-        for case_data in test_cases_data:
-            # 生成操作步骤
-            actions = await test_generator.generate_actions(
-                case_data["user_query"],
-                scenario.target_url
-            )
-
-            # 生成测试脚本（使用已获取的页面内容，避免重复打开浏览器）
-            print(f"   Generating script for test case: {case_data['name']}")
-            # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
-            use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
-            auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
-            print(f"   Use captcha from scenario: {use_captcha}")
-            print(f"   Auto cookie/localstorage from scenario: {auto_cookie_localstorage}")
-
-            # 从全局配置读取是否使用 Computer-Use 方案
-            use_computer_use_config = await db.execute(
-                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.USE_COMPUTER_USE)
-            )
-            use_computer_use = False  # 默认不使用
-            config_cu = use_computer_use_config.scalar_one_or_none()
-            if config_cu and config_cu.config_value:
-                use_computer_use = config_cu.config_value.lower() == "true"
-            print(f"   Use Computer-Use from config: {use_computer_use}")
-
-            # 根据配置选择使用哪种方案
-            if use_computer_use:
-                print(f"   Using Computer-Use approach for: {case_data['name']}")
-                script_result = await test_executor.generate_script_with_computer_use(
-                    case_data["user_query"],
-                    scenario.target_url,
-                    auto_detect_captcha=use_captcha,
-                    auto_cookie_localstorage=auto_cookie_localstorage,
-                    load_saved_storage=load_saved_storage,
-                    page_content=page_content
-                )
-            else:
-                print(f"   Using HTML approach for: {case_data['name']}")
-                script_result = await test_executor.generate_script_only(
-                    case_data["user_query"],
-                    scenario.target_url,
-                    auto_detect_captcha=use_captcha,
-                    auto_cookie_localstorage=auto_cookie_localstorage,
-                    load_saved_storage=load_saved_storage,
-                    page_content=page_content
-                )
-            
-            # 检查脚本生成是否成功
-            if script_result.get("status") != "success":
-                print(f"   ❌ 脚本生成失败: {script_result.get('error', 'Unknown error')}")
-                continue  # 跳过这个测试用例
-            
-            script = script_result.get("script", "")
-            print(f"   Script generated: {len(script)} chars")
-
-            # 将 expected_result 转换为 JSON 字符串
-            expected_result = case_data.get("expected_result")
-            if isinstance(expected_result, dict):
-                expected_result = json.dumps(expected_result, ensure_ascii=False)
-
-            db_case = TestCase(
-                scenario_id=scenario.id,
-                name=case_data["name"],
-                description=case_data["description"],
-                target_url=scenario.target_url,
-                user_query=case_data["user_query"],
-                test_data=case_data.get("test_data", {}),
-                expected_result=expected_result,
-                actions=actions,
-                script=script,  # Save generated script
-                priority=case_data.get("priority", "P1"),
-                case_type=case_data.get("case_type", "positive"),
-                status="generated"  # Generated but not executed
-            )
-            db.add(db_case)
-            generated_cases.append(db_case)
-
-        # 提交所有测试用例
-        await db.commit()
-
+        # ===== 测试：只打开浏览器加载cookie和storage，不调用大模型 =====
+        print("\n   ===== 测试：只加载页面和storage =====")
+        page_content = await test_generator.get_page_content(scenario.target_url, load_saved_storage)
+        print(f"   页面标题: {page_content.get('title', 'N/A')}")
+        print(f"   页面URL: {page_content.get('url', 'N/A')}")
+        print("   ===== 测试完成 =====\n")
+        
+        # 临时返回，不生成用例
         return {
-            "message": f"成功生成 {len(generated_cases)} 个测试用例",
-            "test_cases": generated_cases
+            "message": "测试完成：只加载了页面和storage，未生成用例",
+            "test_cases": [],
+            "page_title": page_content.get('title'),
+            "page_url": page_content.get('url')
         }
+        
+        # ===== 以下代码暂时注释掉，用于测试 =====
+        # # 生成多个测试用例（内部会获取页面内容，并返回页面内容供后续使用）
+        # strategy = generation_strategy or scenario.generation_strategy
+        # test_cases_data, page_content = await test_generator.generate_multiple_test_cases(
+        #     scenario.user_query,
+        #     scenario.target_url,
+        #     strategy,
+        #     load_saved_storage
+        # )
+        # print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
+        #
+        # # 为每个用例生成操作步骤和脚本
+        # generated_cases = []
+        # for case_data in test_cases_data:
+        #     ...
 
     except Exception as e:
         # 回滚当前事务
