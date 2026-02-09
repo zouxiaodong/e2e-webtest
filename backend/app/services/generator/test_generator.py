@@ -198,7 +198,9 @@ class TestGenerator:
                     "        await asyncio.sleep(1)",
                     "        # 加载storage后刷新页面，使登录状态生效",
                     "        print('[调试] 正在刷新页面使登录状态生效...', file=sys.stderr)",
-                    "        await page.reload(wait_until='networkidle', timeout=60000)",
+                    "        await page.reload(wait_until='domcontentloaded', timeout=30000)",
+                    "        # 等待5秒让页面完全加载（避免SSE请求导致networkidle超时）",
+                    "        await asyncio.sleep(5)",
                     "        print('[调试] 页面刷新完成', file=sys.stderr)",
                     "",
                 ])
