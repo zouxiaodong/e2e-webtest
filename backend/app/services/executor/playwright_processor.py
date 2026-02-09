@@ -25,9 +25,50 @@ def detect_and_handle_captcha(page, api_key, base_url, vl_model):
         是否成功处理验证码
     """
     try:
-        # 检测验证码图片
-        captcha_img = page.locator('img[src*="captcha"], img[id*="captcha"], .captcha img').first
-        if not captcha_img.is_visible(timeout=3000):
+        # 检测验证码图片 - 使用更通用的选择器
+        captcha_img = None
+        
+        # 尝试多种选择器
+        selectors = [
+            'img[src*="captcha"]',
+            'img[id*="captcha"]',
+            'img[alt*="captcha"]',
+            'img[alt*="验证码"]',
+            '.captcha img',
+            '#captcha img',
+            '[class*="captcha"] img',
+            'img[src*="code"]',
+            'img[src*="verify"]'
+        ]
+        
+        for selector in selectors:
+            try:
+                elements = page.locator(selector)
+                if elements.count() > 0:
+                    captcha_img = elements.first
+                    if captcha_img.is_visible(timeout=1000):
+                        print(f"   [子进程] 使用选择器找到验证码: {selector}")
+                        break
+            except:
+                continue
+        
+        # 如果没找到，尝试查找所有图片并检查 src 属性
+        if not captcha_img:
+            all_images = page.locator('img')
+            for i in range(all_images.count()):
+                img = all_images.nth(i)
+                try:
+                    src = img.get_attribute('src') or ''
+                    alt = img.get_attribute('alt') or ''
+                    if any(keyword in src.lower() or keyword in alt.lower() for keyword in ['captcha', '验证码', 'code', 'verify', 'check']):
+                        captcha_img = img
+                        if captcha_img.is_visible(timeout=1000):
+                            print(f"   [子进程] 通过属性查找找到验证码: src={src[:50]}...")
+                            break
+                except:
+                    continue
+        
+        if not captcha_img or not captcha_img.is_visible(timeout=1000):
             print("   [子进程] 未检测到验证码")
             return False
 
@@ -63,9 +104,32 @@ def detect_and_handle_captcha(page, api_key, base_url, vl_model):
         captcha_text = response.choices[0].message.content.strip()
         print(f"   [子进程] 识别到验证码: {captcha_text}")
 
-        # 填写验证码
-        captcha_input = page.locator('input[name*="captcha"], input[id*="captcha"], input[placeholder*="验证码"]').first
-        if captcha_input.is_visible(timeout=3000):
+        # 填写验证码 - 使用更通用的选择器
+        captcha_input = None
+        input_selectors = [
+            'input[name*="captcha"]',
+            'input[id*="captcha"]',
+            'input[placeholder*="captcha"]',
+            'input[placeholder*="验证码"]',
+            'input[name*="code"]',
+            'input[name*="verify"]',
+            'input[type="text"][maxlength*="4"]',
+            'input[type="text"][maxlength*="5"]',
+            'input[type="text"][maxlength*="6"]'
+        ]
+        
+        for selector in input_selectors:
+            try:
+                elements = page.locator(selector)
+                if elements.count() > 0:
+                    captcha_input = elements.first
+                    if captcha_input.is_visible(timeout=1000):
+                        print(f"   [子进程] 使用选择器找到验证码输入框: {selector}")
+                        break
+            except:
+                continue
+        
+        if captcha_input and captcha_input.is_visible(timeout=1000):
             captcha_input.fill(captcha_text)
             print("   [子进程] 验证码已填写")
             return True
