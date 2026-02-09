@@ -260,33 +260,45 @@ def process_playwright_task(task_data):
                     action_description=action
                 )
 
-                if not action_result.get("element_found"):
-                    print(f"   [子进程] ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                    continue
-
-                # 生成代码，使用 action_result 中的 text_to_fill
-                action_code = sync_computer_use_service.generate_playwright_code_from_coordinates(
-                    action=action_result.get("action", "click"),
-                    coordinates=action_result.get("coordinates", {}),
-                    text_to_fill=action_result.get("text_to_fill"),
-                    is_last=is_last
-                )
-
-                print(f"   [子进程] 生成的代码:\n{action_code}")
-
                 # 收集操作代码
                 code_lines = []
                 code_lines.append(f"                # Action {i}: {action}")
                 code_lines.append(f"                print('[TEST] Action {i} started')")
-                for line in action_code.strip().split('\n'):
-                    code_lines.append(f"                {line}")
+
+                if not action_result.get("element_found"):
+                    print(f"   [子进程] ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                    # 生成一个注释说明未找到元素
+                    code_lines.append(f"                # ⚠️ 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                    code_lines.append(f"                # 尝试通过文本内容查找并验证")
+                    code_lines.append(f"                try:")
+                    code_lines.append(f"                    # 等待页面稳定")
+                    code_lines.append(f"                    await page.wait_for_timeout(2000)")
+                    code_lines.append(f"                    # 截图用于调试")
+                    code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
+                    code_lines.append(f"                    print('[TEST] Action {i}: 截图已保存到 action_{i}_screenshot.png')")
+                    code_lines.append(f"                except Exception as e:")
+                    code_lines.append(f"                    print(f'[TEST] Action {i}: 截图失败 - {{e}}')")
+                else:
+                    # 生成代码，使用 action_result 中的 text_to_fill
+                    action_code = sync_computer_use_service.generate_playwright_code_from_coordinates(
+                        action=action_result.get("action", "click"),
+                        coordinates=action_result.get("coordinates", {}),
+                        text_to_fill=action_result.get("text_to_fill"),
+                        is_last=is_last
+                    )
+
+                    print(f"   [子进程] 生成的代码:\n{action_code}")
+
+                    for line in action_code.strip().split('\n'):
+                        code_lines.append(f"                {line}")
+
+                    # 执行操作以便进行下一步截图分析
+                    sync_computer_use_service.execute_action_with_coordinates(page, action_result)
+
                 code_lines.append("                await asyncio.sleep(3)")
                 code_lines.append(f"                print('[TEST] Action {i} completed')")
 
                 collected_codes.extend(code_lines)
-
-                # 执行操作以便进行下一步截图分析
-                sync_computer_use_service.execute_action_with_coordinates(page, action_result)
 
                 # 如果启用了自动验证码检测，在执行操作后也检查验证码
                 if auto_detect_captcha:
