@@ -209,7 +209,17 @@ class TestGenerator:
                     print(f"脚本执行失败: {result.stderr}")
                     raise Exception(f"脚本执行失败: {result.stderr}")
                 
+                # 打印脚本输出，用于调试
+                print(f"脚本stdout长度: {len(result.stdout)}")
+                print(f"脚本stdout前500字符: {result.stdout[:500]}")
+                print(f"脚本stderr长度: {len(result.stderr)}")
+                if result.stderr:
+                    print(f"脚本stderr: {result.stderr}")
+                
                 # 解析结果
+                if not result.stdout.strip():
+                    raise Exception("脚本输出为空")
+                
                 data = json.loads(result.stdout.strip())
                 
                 # 清理 HTML
