@@ -196,8 +196,7 @@ class TestGenerator:
                     "            print('[加载] SessionStorage: 文件不存在', file=sys.stderr)",
                     "        # 加载storage后刷新页面，使cookie生效",
                     "        print('[调试] 正在刷新页面使cookie生效...', file=sys.stderr)",
-                    "        await page.reload(wait_until='networkidle')",
-                    "        await page.wait_for_load_state('domcontentloaded')",
+                    "        await page.reload(wait_until='domcontentloaded', timeout=60000)",
                     "        print('[调试] 页面刷新完成', file=sys.stderr)",
                     "",
                 ])
