@@ -168,15 +168,75 @@ def process_playwright_task(task_data):
         print(f"   [子进程] 目标URL: {target_url}")
         print(f"   [子进程] 操作数量: {len(actions)}")
         print(f"   [子进程] 自动验证码检测: {auto_detect_captcha}")
+        print(f"   [子进程] 加载保存的storage: {load_saved_storage}")
 
         collected_codes = []
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=browser_headless)
             page = browser.new_page()
-            page.goto(target_url)
-            page.wait_for_load_state("networkidle")
-            import time
-            time.sleep(2)
+            
+            # 如果需要加载保存的storage
+            if load_saved_storage:
+                print("   [子进程] 正在加载保存的 cookies 和 storage...")
+                import os, json
+                
+                # 获取会话存储路径
+                session_storage_path = os.getenv('SESSION_STORAGE_PATH', os.getcwd())
+                
+                # 加载cookies
+                cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')
+                if os.path.exists(cookie_file):
+                    with open(cookie_file, 'r', encoding='utf-8') as f:
+                        cookies = json.load(f)
+                    if cookies:
+                        page.context.add_cookies(cookies)
+                        print(f"   [子进程] ✅ Cookies 已加载: {len(cookies)}个")
+                    else:
+                        print("   [子进程] ⚠️ Cookies 文件为空")
+                else:
+                    print(f"   [子进程] ⚠️ Cookies 文件不存在: {cookie_file}")
+                
+                # 加载localStorage和sessionStorage（在页面加载后）
+                page.goto(target_url)
+                page.wait_for_load_state("domcontentloaded")
+                
+                ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')
+                if os.path.exists(ls_file):
+                    with open(ls_file, 'r', encoding='utf-8') as f:
+                        ls_data = f.read()
+                    try:
+                        ls_data_obj = json.loads(ls_data)
+                        page.evaluate("data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }", ls_data_obj)
+                        print("   [子进程] ✅ LocalStorage 已加载")
+                    except json.JSONDecodeError:
+                        print("   [子进程] ⚠️ LocalStorage 解析失败")
+                else:
+                    print(f"   [子进程] ⚠️ LocalStorage 文件不存在")
+                
+                ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')
+                if os.path.exists(ss_file):
+                    with open(ss_file, 'r', encoding='utf-8') as f:
+                        ss_data = f.read()
+                    try:
+                        ss_data_obj = json.loads(ss_data)
+                        page.evaluate("data => { sessionStorage.clear(); for (const key in data) { sessionStorage.setItem(key, data[key]); } }", ss_data_obj)
+                        print("   [子进程] ✅ SessionStorage 已加载")
+                    except json.JSONDecodeError:
+                        print("   [子进程] ⚠️ SessionStorage 解析失败")
+                else:
+                    print(f"   [子进程] ⚠️ SessionStorage 文件不存在")
+                
+                # 刷新页面使storage生效
+                print("   [子进程] 正在刷新页面使登录状态生效...")
+                page.reload(wait_until="domcontentloaded")
+                import time
+                time.sleep(5)
+                print("   [子进程] ✅ 页面刷新完成")
+            else:
+                page.goto(target_url)
+                page.wait_for_load_state("networkidle")
+                import time
+                time.sleep(2)
 
             for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
                 is_last = i == len(actions) - 1
