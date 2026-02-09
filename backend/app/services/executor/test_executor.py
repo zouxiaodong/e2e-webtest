@@ -541,7 +541,7 @@ async def test_generated():
 
             # Final wait before closing
             print("[TEST] Final wait before closing")
-            await asyncio.sleep(3)
+            await asyncio.sleep(30)  # Wait 30 seconds for debugging
             
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
@@ -891,7 +891,7 @@ async def test_generated():
                 raise
 
             print("[TEST] Final wait before closing")
-            await asyncio.sleep(3)
+            await asyncio.sleep(30)  # Wait 30 seconds for debugging
             
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
