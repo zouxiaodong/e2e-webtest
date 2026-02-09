@@ -27,7 +27,8 @@ class TestExecutor:
         user_query: str,
         target_url: str,
         auto_detect_captcha: bool = False,
-        auto_cookie_localstorage: bool = True
+        auto_cookie_localstorage: bool = True,
+        page_content: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         只生成测试脚本，不执行测试 - 用于批量生成用例
@@ -35,6 +36,7 @@ class TestExecutor:
             user_query: 用户查询
             target_url: 目标URL
             auto_detect_captcha: 是否自动检测验证码
+            page_content: 页面内容（如果提供，则不重新获取）
         Returns:
             包含脚本的字典
         """
@@ -51,10 +53,13 @@ class TestExecutor:
             print(f"用户查询: {user_query}")
             print(f"目标URL: {target_url}")
 
-            # 步骤1: 获取页面内容（截图和HTML）
+            # 步骤1: 获取页面内容（截图和HTML）- 如果未提供则获取
             print("\n步骤1: 获取页面内容...")
-            page_content = await test_generator.get_page_content(target_url)
-            print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+            if page_content is None:
+                page_content = await test_generator.get_page_content(target_url)
+                print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+            else:
+                print(f"✅ 使用已获取的页面内容: {page_content.get('title', 'N/A')}")
 
             # 步骤2: 分析页面内容
             print("\n步骤2: 分析页面内容...")
@@ -524,7 +529,8 @@ if __name__ == "__main__":
         user_query: str,
         target_url: str,
         auto_detect_captcha: bool = False,
-        auto_cookie_localstorage: bool = True
+        auto_cookie_localstorage: bool = True,
+        page_content: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         使用 Computer-Use 方案生成测试脚本（基于截图 + 坐标定位）
@@ -532,6 +538,7 @@ if __name__ == "__main__":
             user_query: 用户查询
             target_url: 目标URL
             auto_detect_captcha: 是否自动检测验证码
+            page_content: 页面内容（如果提供，则不重新获取）
         Returns:
             包含脚本的字典
         """
@@ -548,10 +555,13 @@ if __name__ == "__main__":
             print(f"用户查询: {user_query}")
             print(f"目标URL: {target_url}")
 
-            # 步骤1: 获取页面内容（截图和HTML）
+            # 步骤1: 获取页面内容（截图和HTML）- 如果未提供则获取
             print("\n步骤1: 获取页面内容...")
-            page_content = await test_generator.get_page_content(target_url)
-            print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+            if page_content is None:
+                page_content = await test_generator.get_page_content(target_url)
+                print(f"✅ 页面标题: {page_content.get('title', 'N/A')}")
+            else:
+                print(f"✅ 使用已获取的页面内容: {page_content.get('title', 'N/A')}")
 
             # 步骤2: 分析页面内容
             print("\n步骤2: 分析页面内容...")

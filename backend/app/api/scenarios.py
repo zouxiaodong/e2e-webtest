@@ -209,6 +209,11 @@ async def generate_scenario_cases(
             strategy
         )
 
+        # 只获取一次页面内容，避免重复打开浏览器
+        print(f"\n   Fetching page content once for all test cases...")
+        page_content = await test_generator.get_page_content(scenario.target_url)
+        print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
+
         # 为每个用例生成操作步骤和脚本
         generated_cases = []
         for case_data in test_cases_data:
@@ -218,7 +223,7 @@ async def generate_scenario_cases(
                 scenario.target_url
             )
 
-            # 生成测试脚本（只生成，不执行，避免重复打开浏览器）
+            # 生成测试脚本（使用已获取的页面内容，避免重复打开浏览器）
             print(f"   Generating script for test case: {case_data['name']}")
             # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
             use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
@@ -243,7 +248,8 @@ async def generate_scenario_cases(
                     case_data["user_query"],
                     scenario.target_url,
                     auto_detect_captcha=use_captcha,
-                    auto_cookie_localstorage=auto_cookie_localstorage
+                    auto_cookie_localstorage=auto_cookie_localstorage,
+                    page_content=page_content
                 )
             else:
                 print(f"   Using HTML approach for: {case_data['name']}")
@@ -251,7 +257,8 @@ async def generate_scenario_cases(
                     case_data["user_query"],
                     scenario.target_url,
                     auto_detect_captcha=use_captcha,
-                    auto_cookie_localstorage=auto_cookie_localstorage
+                    auto_cookie_localstorage=auto_cookie_localstorage,
+                    page_content=page_content
                 )
             script = script_result.get("script", "")
             print(f"   Script generated: {len(script)} chars")
