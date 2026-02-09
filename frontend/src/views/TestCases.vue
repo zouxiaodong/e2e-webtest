@@ -85,7 +85,7 @@
 
         <div v-if="currentTestCase.actions && currentTestCase.actions.length > 0" style="margin-top: 20px">
           <h4>操作步骤</h4>
-          <el-steps :active="currentTestCase.actions.length" finish-status="success">
+          <el-steps :active="currentTestCase.actions.length" finish-status="success" direction="vertical">
             <el-step v-for="(action, index) in currentTestCase.actions" :key="index" :title="action" />
           </el-steps>
         </div>
