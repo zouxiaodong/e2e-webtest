@@ -197,18 +197,14 @@ async def generate_scenario_cases(
         load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
         print(f"   Load saved storage from scenario: {load_saved_storage}")
         
-        # 生成多个测试用例（内部会获取页面内容）
+        # 生成多个测试用例（内部会获取页面内容，并返回页面内容供后续使用）
         strategy = generation_strategy or scenario.generation_strategy
-        test_cases_data = await test_generator.generate_multiple_test_cases(
+        test_cases_data, page_content = await test_generator.generate_multiple_test_cases(
             scenario.user_query,
             scenario.target_url,
             strategy,
             load_saved_storage
         )
-
-        # 只获取一次页面内容，避免重复打开浏览器
-        print(f"\n   Fetching page content once for all test cases...")
-        page_content = await test_generator.get_page_content(scenario.target_url, load_saved_storage)
         print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
 
         # 为每个用例生成操作步骤和脚本

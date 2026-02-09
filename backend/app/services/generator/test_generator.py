@@ -458,7 +458,7 @@ class TestGenerator:
         target_url: str,
         generation_strategy: GenerationStrategy = GenerationStrategy.BASIC,
         load_saved_storage: bool = True
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         根据生成策略生成多个测试用例
         Args:
@@ -467,7 +467,7 @@ class TestGenerator:
             generation_strategy: 生成策略
             load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
         Returns:
-            测试用例列表，每个用例包含名称、描述、优先级、类型等
+            (测试用例列表, 页面内容)，每个用例包含名称、描述、优先级、类型等
         """
         print(f"正在分析页面: {target_url}")
         
@@ -508,7 +508,7 @@ class TestGenerator:
                 page_analysis
             )
 
-        return test_cases
+        return test_cases, page_content
 
     async def _generate_happy_path_cases(
         self,
