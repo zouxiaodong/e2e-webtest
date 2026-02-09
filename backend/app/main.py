@@ -75,7 +75,6 @@ async def lifespan(app: FastAPI):
         print(f"默认用户名: {config_dict.get(ConfigKeys.DEFAULT_USERNAME, '未设置')}")
         print(f"浏览器无头模式: {config_dict.get(ConfigKeys.BROWSER_HEADLESS, 'true')} ({'关闭' if config_dict.get(ConfigKeys.BROWSER_HEADLESS) == 'false' else '开启'})")
         print(f"浏览器超时: {config_dict.get(ConfigKeys.BROWSER_TIMEOUT, '30000')}ms")
-        print(f"自动检测验证码: {config_dict.get(ConfigKeys.AUTO_DETECT_CAPTCHA, 'false')}")
         print("=" * 60)
         break
 

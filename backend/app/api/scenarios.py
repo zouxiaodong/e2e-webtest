@@ -220,15 +220,11 @@ async def generate_scenario_cases(
 
             # 生成测试脚本（只生成，不执行，避免重复打开浏览器）
             print(f"   Generating script for test case: {case_data['name']}")
-            # 从全局配置读取是否自动检测验证码
-            auto_detect_config = await db.execute(
-                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.AUTO_DETECT_CAPTCHA)
-            )
-            auto_detect_captcha = True  # 默认启用
-            config = auto_detect_config.scalar_one_or_none()
-            if config and config.config_value:
-                auto_detect_captcha = config.config_value.lower() == "true"
-            print(f"   Auto detect captcha from config: {auto_detect_captcha}")
+            # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
+            use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
+            auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
+            print(f"   Use captcha from scenario: {use_captcha}")
+            print(f"   Auto cookie/localstorage from scenario: {auto_cookie_localstorage}")
 
             # 从全局配置读取是否使用 Computer-Use 方案
             use_computer_use_config = await db.execute(
@@ -246,14 +242,16 @@ async def generate_scenario_cases(
                 script_result = await test_executor.generate_script_with_computer_use(
                     case_data["user_query"],
                     scenario.target_url,
-                    auto_detect_captcha=auto_detect_captcha
+                    auto_detect_captcha=use_captcha,
+                    auto_cookie_localstorage=auto_cookie_localstorage
                 )
             else:
                 print(f"   Using HTML approach for: {case_data['name']}")
                 script_result = await test_executor.generate_script_only(
                     case_data["user_query"],
                     scenario.target_url,
-                    auto_detect_captcha=auto_detect_captcha
+                    auto_detect_captcha=use_captcha,
+                    auto_cookie_localstorage=auto_cookie_localstorage
                 )
             script = script_result.get("script", "")
             print(f"   Script generated: {len(script)} chars")

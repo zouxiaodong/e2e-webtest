@@ -28,7 +28,6 @@ class ConfigKeys:
     DEFAULT_PASSWORD = "default_password"  # 默认密码
     CAPTCHA_SELECTOR = "captcha_selector"  # 验证码选择器
     CAPTCHA_INPUT_SELECTOR = "captcha_input_selector"  # 验证码输入框选择器
-    AUTO_DETECT_CAPTCHA = "auto_detect_captcha"  # 自动检测验证码
     BROWSER_HEADLESS = "browser_headless"  # 浏览器无头模式
     BROWSER_TIMEOUT = "browser_timeout"  # 浏览器超时时间
     USE_COMPUTER_USE = "use_computer_use"  # 使用 Computer-Use 方案（截图+坐标）

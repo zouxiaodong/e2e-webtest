@@ -45,6 +45,10 @@ class TestScenario(Base):
     session_id = Column(Integer, ForeignKey("test_sessions.id", ondelete="SET NULL"), comment="使用的会话ID")
     save_session = Column(Boolean, default=False, comment="是否保存会话")
     
+    # 验证码和 Cookie/LocalStorage 配置
+    use_captcha = Column(Boolean, default=False, comment="是否使用验证码")
+    auto_cookie_localstorage = Column(Boolean, default=True, comment="自动加载和保存 cookie/localstorage")
+    
     created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 

@@ -39,6 +39,8 @@ class TestScenarioBase(BaseModel):
     target_url: str = Field(..., description="目标URL")
     user_query: str = Field(..., description="用户自然语言描述的场景")
     generation_strategy: GenerationStrategy = Field(GenerationStrategy.BASIC, description="生成策略")
+    use_captcha: bool = Field(False, description="是否使用验证码")
+    auto_cookie_localstorage: bool = Field(True, description="自动加载和保存 cookie/localstorage")
 
 
 class TestScenarioCreate(TestScenarioBase):
@@ -54,6 +56,8 @@ class TestScenarioUpdate(BaseModel):
     user_query: Optional[str] = None
     generation_strategy: Optional[GenerationStrategy] = None
     status: Optional[str] = None
+    use_captcha: Optional[bool] = None
+    auto_cookie_localstorage: Optional[bool] = None
 
 
 class TestScenarioResponse(TestScenarioBase):

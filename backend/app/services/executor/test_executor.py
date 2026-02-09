@@ -26,7 +26,8 @@ class TestExecutor:
         self,
         user_query: str,
         target_url: str,
-        auto_detect_captcha: bool = False
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True
     ) -> Dict[str, Any]:
         """
         只生成测试脚本，不执行测试 - 用于批量生成用例
@@ -71,7 +72,7 @@ class TestExecutor:
             # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
             print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha, page_content.get('html', '')
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, page_content.get('html', '')
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -98,7 +99,8 @@ class TestExecutor:
         self,
         user_query: str,
         target_url: str,
-        auto_detect_captcha: bool = False
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True
     ) -> Dict[str, Any]:
         """
         执行完整的工作流 - 只打开一次浏览器
@@ -152,7 +154,7 @@ class TestExecutor:
             # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
             print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha, page_content.get('html', '')
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, page_content.get('html', '')
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -283,6 +285,7 @@ class TestExecutor:
         target_url: str,
         actions: list,
         auto_detect_captcha: bool,
+        auto_cookie_localstorage: bool = True,
         html_content: str = ""
     ) -> str:
         """
@@ -315,6 +318,21 @@ class TestExecutor:
         # 添加导航后的延迟（使用16空格缩进）
         action_codes.append("                # 等待页面加载")
         action_codes.append("                await page.wait_for_timeout(2000)")
+
+        # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
+        if auto_cookie_localstorage:
+            action_codes.append("                # 加载保存的 cookies 和 localStorage")
+            action_codes.append("                import os, json")
+            action_codes.append("                if os.path.exists('saved_cookies.json'):")
+            action_codes.append("                    with open('saved_cookies.json', 'r', encoding='utf-8') as f:")
+            action_codes.append("                        cookies = json.load(f)")
+            action_codes.append("                    await page.context.add_cookies(cookies)")
+            action_codes.append("                    print('Cookies 已加载')")
+            action_codes.append("                if os.path.exists('saved_localstorage.json'):")
+            action_codes.append("                    with open('saved_localstorage.json', 'r', encoding='utf-8') as f:")
+            action_codes.append("                        ls_data = f.read()")
+            action_codes.append("                    await page.evaluate(f\"() => {{ localStorage.clear(); const data = {ls_data}; for (const key in data) {{ localStorage.setItem(key, data[key]); }} }}\")")
+            action_codes.append("                    print('LocalStorage 已加载')")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         captcha_handler_code = ""
@@ -471,6 +489,17 @@ async def test_generated():
             print("[TEST] Final wait before closing")
             await asyncio.sleep(5)
             
+            # Save cookies and localStorage if enabled
+            if {auto_cookie_localstorage}:
+                cookies = await page.context.cookies()
+                with open('saved_cookies.json', 'w', encoding='utf-8') as f:
+                    json.dump(cookies, f, ensure_ascii=False, indent=2)
+                print('[TEST] Cookies saved')
+                ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
+                with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
+                    f.write(ls_data)
+                print('[TEST] LocalStorage saved')
+            
             # Close browser
             print("[TEST] Closing browser")
             await browser.close()
@@ -494,7 +523,8 @@ if __name__ == "__main__":
         self,
         user_query: str,
         target_url: str,
-        auto_detect_captcha: bool = False
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True
     ) -> Dict[str, Any]:
         """
         使用 Computer-Use 方案生成测试脚本（基于截图 + 坐标定位）
@@ -539,7 +569,7 @@ if __name__ == "__main__":
             # 步骤4: 使用 Computer-Use 方案生成脚本
             print("\n步骤4: 使用 Computer-Use 方案生成完整测试脚本...")
             final_script = await self._generate_computer_use_script(
-                target_url, actions, auto_detect_captcha
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -566,7 +596,8 @@ if __name__ == "__main__":
         self,
         target_url: str,
         actions: list,
-        auto_detect_captcha: bool = False
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True
     ) -> str:
         """
         使用 Computer-Use 方案生成测试脚本
@@ -602,6 +633,21 @@ if __name__ == "__main__":
         # 添加导航后的延迟
         action_codes.append("                # 等待页面加载")
         action_codes.append("                await page.wait_for_timeout(2000)")
+
+        # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
+        if auto_cookie_localstorage:
+            action_codes.append("                # 加载保存的 cookies 和 localStorage")
+            action_codes.append("                import os, json")
+            action_codes.append("                if os.path.exists('saved_cookies.json'):")
+            action_codes.append("                    with open('saved_cookies.json', 'r', encoding='utf-8') as f:")
+            action_codes.append("                        cookies = json.load(f)")
+            action_codes.append("                    await page.context.add_cookies(cookies)")
+            action_codes.append("                    print('Cookies 已加载')")
+            action_codes.append("                if os.path.exists('saved_localstorage.json'):")
+            action_codes.append("                    with open('saved_localstorage.json', 'r', encoding='utf-8') as f:")
+            action_codes.append("                        ls_data = f.read()")
+            action_codes.append("                    await page.evaluate(f\"() => {{ localStorage.clear(); const data = {ls_data}; for (const key in data) {{ localStorage.setItem(key, data[key]); }} }}\")")
+            action_codes.append("                    print('LocalStorage 已加载')")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         if auto_detect_captcha:
@@ -717,6 +763,17 @@ async def test_generated():
 
             print("[TEST] Final wait before closing")
             await asyncio.sleep(5)
+            
+            # Save cookies and localStorage if enabled
+            if {auto_cookie_localstorage}:
+                cookies = await page.context.cookies()
+                with open('saved_cookies.json', 'w', encoding='utf-8') as f:
+                    json.dump(cookies, f, ensure_ascii=False, indent=2)
+                print('[TEST] Cookies saved')
+                ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
+                with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
+                    f.write(ls_data)
+                print('[TEST] LocalStorage saved')
             
             print("[TEST] Closing browser")
             await browser.close()
