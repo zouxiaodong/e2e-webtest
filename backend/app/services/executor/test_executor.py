@@ -959,7 +959,7 @@ if __name__ == "__main__":
                     timeout=300,  # 5分钟超时
                     encoding='utf-8',
                     errors='replace',
-                    cwd=os.path.dirname(os.path.abspath(__file__))  # 设置工作目录为backend目录
+                    cwd=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 设置工作目录为backend目录
                 )
             
             print("   等待测试执行完成（最多5分钟）...")
