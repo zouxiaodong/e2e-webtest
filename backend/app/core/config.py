@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     BROWSER_HEADLESS: bool = True
     BROWSER_TIMEOUT: int = 30000
 
+    # 会话存储配置
+    SESSION_STORAGE_PATH: str = ""  # cookies、localStorage、sessionStorage文件的存储路径
+
     # 工作目录
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
