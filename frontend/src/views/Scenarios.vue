@@ -162,9 +162,33 @@
       </div>
     </el-dialog>
 
-    <!-- 查看脚本对话框 -->
-    <el-dialog v-model="scriptDialogVisible" :title="`测试脚本 - ${currentTestCaseName}`" width="900px">
-      <el-input v-model="currentTestCaseScript" type="textarea" :rows="20" readonly />
+    <!-- 查看测试用例详情对话框 -->
+    <el-dialog v-model="testCaseDetailVisible" title="测试用例详情" width="800px">
+      <div v-if="currentTestCase">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="ID">{{ currentTestCase.id }}</el-descriptions-item>
+          <el-descriptions-item label="名称">{{ currentTestCase.name }}</el-descriptions-item>
+          <el-descriptions-item label="状态">
+            <el-tag :type="getStatusType(currentTestCase.status)">
+              {{ getStatusText(currentTestCase.status) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="目标URL">{{ currentScenario.target_url }}</el-descriptions-item>
+          <el-descriptions-item label="测试需求" :span="2">{{ currentTestCase.description }}</el-descriptions-item>
+        </el-descriptions>
+
+        <div v-if="currentTestCase.actions && currentTestCase.actions.length > 0" style="margin-top: 20px">
+          <h4>操作步骤</h4>
+          <el-steps :active="currentTestCase.actions.length" finish-status="success" direction="vertical">
+            <el-step v-for="(action, index) in currentTestCase.actions" :key="index" :title="action" />
+          </el-steps>
+        </div>
+
+        <div v-if="currentTestCase.script" style="margin-top: 20px">
+          <h4>生成的脚本</h4>
+          <el-input v-model="currentTestCase.script" type="textarea" :rows="15" readonly />
+        </div>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -180,9 +204,8 @@ const loading = ref(false)
 const createDialogVisible = ref(false)
 const viewDialogVisible = ref(false)
 const currentScenario = ref(null)
-const scriptDialogVisible = ref(false)
-const currentTestCaseScript = ref('')
-const currentTestCaseName = ref('')
+const testCaseDetailVisible = ref(false)
+const currentTestCase = ref(null)
 const isEdit = ref(false)
 const editingScenarioId = ref(null)
 
@@ -390,11 +413,10 @@ const formatDate = (dateStr) => {
   return date.toLocaleString('zh-CN')
 }
 
-// 查看测试用例脚本
+// 查看测试用例详情
 const viewTestCaseScript = (testCase) => {
-  currentTestCaseName.value = testCase.name
-  currentTestCaseScript.value = testCase.script || '暂无脚本'
-  scriptDialogVisible.value = true
+  currentTestCase.value = testCase
+  testCaseDetailVisible.value = true
 }
 
 onMounted(() => {
