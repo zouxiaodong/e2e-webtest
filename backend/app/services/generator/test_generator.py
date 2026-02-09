@@ -230,7 +230,7 @@ class TestGenerator:
                     [sys.executable, temp_script_path],
                     capture_output=True,
                     text=True,
-                    timeout=30,
+                    timeout=60,  # 增加到60秒，给页面加载和刷新足够时间
                     encoding='utf-8',
                     errors='replace'
                 )
