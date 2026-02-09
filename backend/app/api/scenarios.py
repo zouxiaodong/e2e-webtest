@@ -193,10 +193,12 @@ async def generate_scenario_cases(
         await db.commit()
         print(f"   Existing test cases deleted")
 
-        # 生成多个测试用例
-        strategy = generation_strategy or scenario.generation_strategy
+        # 获取场景的load_saved_storage配置
         load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
         print(f"   Load saved storage from scenario: {load_saved_storage}")
+        
+        # 生成多个测试用例（内部会获取页面内容）
+        strategy = generation_strategy or scenario.generation_strategy
         test_cases_data = await test_generator.generate_multiple_test_cases(
             scenario.user_query,
             scenario.target_url,
@@ -206,8 +208,6 @@ async def generate_scenario_cases(
 
         # 只获取一次页面内容，避免重复打开浏览器
         print(f"\n   Fetching page content once for all test cases...")
-        load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
-        print(f"   Load saved storage from scenario: {load_saved_storage}")
         page_content = await test_generator.get_page_content(scenario.target_url, load_saved_storage)
         print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
 
