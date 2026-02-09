@@ -127,45 +127,37 @@
 
         <div v-if="currentScenario.test_cases && currentScenario.test_cases.length > 0" style="margin-top: 20px">
           <h3>测试用例列表</h3>
-          <el-row :gutter="20">
-            <el-col v-for="testCase in currentScenario.test_cases" :key="testCase.id" :span="12" style="margin-bottom: 20px">
-              <el-card shadow="hover">
-                <template #header>
-                  <div class="test-case-card-header">
-                    <span class="test-case-name">{{ testCase.name }}</span>
-                    <el-tag :type="getPriorityType(testCase.priority)" size="small">
-                      {{ testCase.priority }}
-                    </el-tag>
-                  </div>
-                </template>
-                <div class="test-case-content">
-                  <div v-if="testCase.description" class="test-case-item">
-                    <span class="label">描述：</span>
-                    <span class="value">{{ testCase.description }}</span>
-                  </div>
-                  <div class="test-case-item">
-                    <span class="label">类型：</span>
-                    <el-tag size="small">{{ getCaseTypeText(testCase.case_type) }}</el-tag>
-                  </div>
-                  <div class="test-case-item">
-                    <span class="label">状态：</span>
-                    <el-tag :type="getStatusType(testCase.status)" size="small">
-                      {{ getStatusText(testCase.status) }}
-                    </el-tag>
-                  </div>
-                  <div class="test-case-item">
-                    <span class="label">执行次数：</span>
-                    <span class="value">{{ testCase.execution_count }}</span>
-                  </div>
-                  <div class="test-case-actions">
-                    <el-button size="small" type="primary" @click="viewTestCaseScript(testCase)">
-                      查看脚本
-                    </el-button>
-                  </div>
-                </div>
-              </el-card>
-            </el-col>
-          </el-row>
+          <el-table :data="currentScenario.test_cases" stripe>
+            <el-table-column prop="name" label="用例名称" width="200" />
+            <el-table-column prop="description" label="描述" show-overflow-tooltip />
+            <el-table-column prop="priority" label="优先级" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getPriorityType(row.priority)">
+                  {{ row.priority }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="case_type" label="类型" width="120">
+              <template #default="{ row }">
+                <el-tag>{{ getCaseTypeText(row.case_type) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="status" label="状态" width="100">
+              <template #default="{ row }">
+                <el-tag :type="getStatusType(row.status)">
+                  {{ getStatusText(row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="execution_count" label="执行次数" width="100" />
+            <el-table-column label="操作" width="120">
+              <template #default="{ row }">
+                <el-button size="small" @click="viewTestCaseScript(row)">
+                  查看脚本
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
         </div>
       </div>
     </el-dialog>
@@ -425,42 +417,5 @@ onMounted(() => {
 .card-header h2 {
   margin: 0;
   color: #303133;
-}
-
-.test-case-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.test-case-name {
-  font-weight: bold;
-  font-size: 16px;
-}
-
-.test-case-content {
-  padding: 10px 0;
-}
-
-.test-case-item {
-  margin-bottom: 12px;
-  display: flex;
-  align-items: center;
-}
-
-.test-case-item .label {
-  font-weight: bold;
-  color: #606266;
-  min-width: 80px;
-}
-
-.test-case-item .value {
-  color: #303133;
-  flex: 1;
-}
-
-.test-case-actions {
-  margin-top: 15px;
-  text-align: right;
 }
 </style>
