@@ -206,8 +206,6 @@ class TestGenerator:
                 "        html = await page.content()",
                 "        screenshot = await page.screenshot(full_page=False)",
                 "        title = await page.title()",
-                "        print('[调试] 页面已加载，等待60秒供您F12查看...', file=sys.stderr)",
-                "        await asyncio.sleep(60)",  # 等待60秒
                 "        await browser.close()",
                 "        return html, base64.b64encode(screenshot).decode('utf-8'), title",
                 "",
@@ -232,7 +230,7 @@ class TestGenerator:
                     [sys.executable, temp_script_path],
                     capture_output=True,
                     text=True,
-                    timeout=120,  # 增加到120秒，给60秒查看时间
+                    timeout=30,
                     encoding='utf-8',
                     errors='replace'
                 )
