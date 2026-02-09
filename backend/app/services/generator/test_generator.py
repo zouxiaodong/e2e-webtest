@@ -136,13 +136,11 @@ class TestGenerator:
                 "",
             ]
             
-            # 如果配置了会话存储路径且需要加载，添加加载cookies、localStorage、sessionStorage的代码
+            # 如果配置了会话存储路径且需要加载，先加载cookies（在页面加载之前）
             if session_storage_path and load_saved_storage:
                 script_lines.extend([
                     f"        session_storage_path = r'{session_storage_path}'",
                     "        cookie_file = os.path.join(session_storage_path, 'saved_cookies.json')",
-                    "        ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')",
-                    "        ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')",
                     "        print(f'Cookie文件路径: {cookie_file}', file=sys.stderr)",
                     "        print(f'Cookie文件存在: {os.path.exists(cookie_file)}', file=sys.stderr)",
                     "        if os.path.exists(cookie_file):",
@@ -151,6 +149,20 @@ class TestGenerator:
                     "            print(f'加载了 {len(cookies)} 个cookies', file=sys.stderr)",
                     "            await page.context.add_cookies(cookies)",
                     "            print('Cookies 已加载', file=sys.stderr)",
+                    "",
+                ])
+            
+            script_lines.extend([
+                f"        await page.goto(\"{target_url}\", wait_until=\"networkidle\", timeout=30000)",
+                "        await page.wait_for_load_state('domcontentloaded')",
+                "",
+            ])
+            
+            # 如果配置了会话存储路径且需要加载，加载localStorage和sessionStorage（在页面加载之后）
+            if session_storage_path and load_saved_storage:
+                script_lines.extend([
+                    "        ls_file = os.path.join(session_storage_path, 'saved_localstorage.json')",
+                    "        ss_file = os.path.join(session_storage_path, 'saved_sessionstorage.json')",
                     "        if os.path.exists(ls_file):",
                     "            with open(ls_file, 'r', encoding='utf-8') as f:",
                     "                ls_data = f.read()",
@@ -173,7 +185,6 @@ class TestGenerator:
                 ])
             
             script_lines.extend([
-                f"        await page.goto(\"{target_url}\", wait_until=\"networkidle\", timeout=30000)",
                 "        html = await page.content()",
                 "        screenshot = await page.screenshot(full_page=False)",
                 "        title = await page.title()",
