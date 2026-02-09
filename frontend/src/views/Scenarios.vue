@@ -35,8 +35,11 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="350" fixed="right">
+        <el-table-column label="操作" width="400" fixed="right">
           <template #default="{ row }">
+            <el-button size="small" @click="editScenario(row)">
+              编辑
+            </el-button>
             <el-button size="small" @click="generateScenario(row)" :disabled="row.status === 'generating'">
               生成用例
             </el-button>
@@ -54,9 +57,9 @@
       </el-table>
     </el-card>
 
-    <!-- 创建场景对话框 -->
-    <el-dialog v-model="createDialogVisible" title="新建测试场景" width="600px">
-      <el-form :model="createForm" label-width="100px">
+    <!-- 创建/编辑场景对话框 -->
+    <el-dialog v-model="createDialogVisible" :title="isEdit ? '编辑测试场景' : '新建测试场景'" width="600px">
+      <el-form :model="createForm" label-width="140px">
         <el-form-item label="场景名称">
           <el-input v-model="createForm.name" placeholder="请输入场景名称" />
         </el-form-item>
@@ -76,10 +79,18 @@
             <el-option label="全面测试" value="comprehensive" />
           </el-select>
         </el-form-item>
+        <el-form-item label="使用验证码">
+          <el-switch v-model="createForm.use_captcha" />
+          <div class="form-tip">开启后自动检测并识别验证码</div>
+        </el-form-item>
+        <el-form-item label="自动 Cookie/LocalStorage">
+          <el-switch v-model="createForm.auto_cookie_localstorage" />
+          <div class="form-tip">开启后自动加载和保存 Cookie/LocalStorage</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate">确定</el-button>
+        <el-button type="primary" @click="handleCreateOrEdit">确定</el-button>
       </template>
     </el-dialog>
 
@@ -101,6 +112,16 @@
           </el-descriptions-item>
           <el-descriptions-item label="用例数量">{{ currentScenario.total_cases }}</el-descriptions-item>
           <el-descriptions-item label="目标URL">{{ currentScenario.target_url }}</el-descriptions-item>
+          <el-descriptions-item label="使用验证码">
+            <el-tag :type="currentScenario.use_captcha ? 'success' : 'info'">
+              {{ currentScenario.use_captcha ? '是' : '否' }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="自动 Cookie/LocalStorage">
+            <el-tag :type="currentScenario.auto_cookie_localstorage ? 'success' : 'info'">
+              {{ currentScenario.auto_cookie_localstorage ? '是' : '否' }}
+            </el-tag>
+          </el-descriptions-item>
           <el-descriptions-item label="场景描述" :span="2">{{ currentScenario.user_query }}</el-descriptions-item>
         </el-descriptions>
 
@@ -162,13 +183,17 @@ const currentScenario = ref(null)
 const scriptDialogVisible = ref(false)
 const currentTestCaseScript = ref('')
 const currentTestCaseName = ref('')
+const isEdit = ref(false)
+const editingScenarioId = ref(null)
 
 const createForm = ref({
   name: '',
   description: '',
   target_url: '',
   user_query: '',
-  generation_strategy: 'basic'
+  generation_strategy: 'basic',
+  use_captcha: false,
+  auto_cookie_localstorage: true
 })
 
 // 加载场景列表
@@ -185,25 +210,53 @@ const loadScenarios = async () => {
 
 // 显示创建对话框
 const showCreateDialog = () => {
+  isEdit.value = false
   createForm.value = {
     name: '',
     description: '',
     target_url: '',
     user_query: '',
-    generation_strategy: 'basic'
+    generation_strategy: 'basic',
+    use_captcha: false,
+    auto_cookie_localstorage: true
   }
   createDialogVisible.value = true
 }
 
-// 创建场景
-const handleCreate = async () => {
+// 编辑场景
+const editScenario = async (scenario) => {
   try {
-    await scenariosApi.create(createForm.value)
-    ElMessage.success('创建成功')
+    isEdit.value = true
+    editingScenarioId.value = scenario.id
+    createForm.value = {
+      name: scenario.name,
+      description: scenario.description,
+      target_url: scenario.target_url,
+      user_query: scenario.user_query,
+      generation_strategy: scenario.generation_strategy,
+      use_captcha: scenario.use_captcha || false,
+      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? true : scenario.auto_cookie_localstorage
+    }
+    createDialogVisible.value = true
+  } catch (error) {
+    ElMessage.error('加载场景信息失败')
+  }
+}
+
+// 创建或更新场景
+const handleCreateOrEdit = async () => {
+  try {
+    if (isEdit.value) {
+      await scenariosApi.update(editingScenarioId.value, createForm.value)
+      ElMessage.success('更新成功')
+    } else {
+      await scenariosApi.create(createForm.value)
+      ElMessage.success('创建成功')
+    }
     createDialogVisible.value = false
     loadScenarios()
   } catch (error) {
-    ElMessage.error('创建失败')
+    ElMessage.error(isEdit.value ? '更新失败' : '创建失败')
   }
 }
 

@@ -487,7 +487,7 @@ async def test_generated():
 
             # Final wait before closing
             print("[TEST] Final wait before closing")
-            await asyncio.sleep(5)
+            await asyncio.sleep(3)
             
             # Save cookies and localStorage if enabled
             if {auto_cookie_localstorage}:
@@ -762,7 +762,7 @@ async def test_generated():
                 raise
 
             print("[TEST] Final wait before closing")
-            await asyncio.sleep(5)
+            await asyncio.sleep(3)
             
             # Save cookies and localStorage if enabled
             if {auto_cookie_localstorage}:

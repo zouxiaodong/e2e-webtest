@@ -57,11 +57,6 @@
           <div class="form-tip">验证码输入框的CSS选择器</div>
         </el-form-item>
 
-        <el-form-item label="自动检测验证码">
-          <el-switch v-model="form.auto_detect_captcha" />
-          <div class="form-tip">开启后自动检测并识别验证码</div>
-        </el-form-item>
-
         <el-divider />
 
         <el-form-item label="浏览器无头模式">
@@ -111,7 +106,6 @@ const form = ref({
   default_password: '',
   captcha_selector: '',
   captcha_input_selector: '',
-  auto_detect_captcha: false,
   browser_headless: true,
   use_computer_use: false,
   browser_timeout: 30000
