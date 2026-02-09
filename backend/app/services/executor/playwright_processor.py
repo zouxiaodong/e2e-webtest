@@ -247,63 +247,140 @@ def process_playwright_task(task_data):
                     print(f"   [子进程] 跳过操作 {i}: {action} (自动验证码检测已启用)")
                     continue
 
-                print(f"   [子进程] 正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
-
-                # 如果启用了自动验证码检测，在执行操作前检查验证码
-                if auto_detect_captcha:
-                    detect_and_handle_captcha(page, api_key, base_url, vl_model)
-                    time.sleep(1)  # 等待验证码填写完成
-
-                # 使用同步版本的 Computer-Use 服务分析页面并生成操作
-                action_result = sync_computer_use_service.analyze_page_and_generate_action(
-                    page=page,
-                    action_description=action
-                )
-
                 # 收集操作代码
                 code_lines = []
                 code_lines.append(f"                # Action {i}: {action}")
                 code_lines.append(f"                print('[TEST] Action {i} started')")
 
-                if not action_result.get("element_found"):
-                    print(f"   [子进程] ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                    # 生成一个注释说明未找到元素
-                    code_lines.append(f"                # ⚠️ 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                    code_lines.append(f"                # 尝试通过文本内容查找并验证")
+                # 判断是否是验证/断言类型的操作
+                is_verification = any(keyword in action.lower() for keyword in [
+                    '验证', '断言', 'assert', '检查', '确认', '存在', '显示', '展示',
+                    'verify', 'check', 'validate', 'confirm', 'visible', 'exist'
+                ])
+
+                if is_verification:
+                    print(f"   [子进程] 操作 {i} 是验证类型，使用VLLM进行截图分析: {action}")
+                    
+                    # 截图并使用VLLM分析
+                    screenshot_bytes = page.screenshot()
+                    import base64
+                    screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                    
+                    # 调用VLLM分析页面
+                    from openai import OpenAI
+                    client = OpenAI(api_key=api_key, base_url=base_url)
+                    
+                    response = client.chat.completions.create(
+                        model=vl_model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": "你是一个网页验证专家。分析截图，判断用户要求的验证内容是否满足。只回答'是'或'否'，并简要说明原因。"
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": f"请验证以下内容是否存在或正确显示：{action}"},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}}
+                                ]
+                            }
+                        ],
+                        temperature=0.0,
+                        max_tokens=200
+                    )
+                    
+                    verification_result = response.choices[0].message.content.strip()
+                    print(f"   [子进程] VLLM验证结果: {verification_result}")
+                    
+                    # 生成验证代码
+                    code_lines.append(f"                # 使用VLLM验证: {action}")
                     code_lines.append(f"                try:")
-                    code_lines.append(f"                    # 等待页面稳定")
-                    code_lines.append(f"                    await page.wait_for_timeout(2000)")
-                    code_lines.append(f"                    # 截图用于调试")
-                    code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
-                    code_lines.append(f"                    print('[TEST] Action {i}: 截图已保存到 action_{i}_screenshot.png')")
+                    code_lines.append(f"                    # 截图")
+                    code_lines.append(f"                    screenshot_bytes = await page.screenshot()")
+                    code_lines.append(f"                    import base64")
+                    code_lines.append(f"                    screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')")
+                    code_lines.append(f"                    ")
+                    code_lines.append(f"                    # 调用VLLM验证")
+                    code_lines.append(f"                    from openai import OpenAI")
+                    code_lines.append(f"                    client = OpenAI(api_key='{api_key}', base_url='{base_url}')")
+                    code_lines.append(f"                    ")
+                    code_lines.append(f"                    response = client.chat.completions.create(")
+                    code_lines.append(f"                        model='{vl_model}',")
+                    code_lines.append(f"                        messages=[")
+                    code_lines.append(f"                            {{'role': 'system', 'content': '你是一个网页验证专家。分析截图，判断用户要求的验证内容是否满足。只回答\"是\"或\"否\"，并简要说明原因。'}},")
+                    code_lines.append(f"                            {{'role': 'user', 'content': [")
+                    code_lines.append(f"                                {{'type': 'text', 'text': '请验证以下内容是否存在或正确显示：{action}'}},")
+                    code_lines.append(f"                                {{'type': 'image_url', 'image_url': {{'url': f\"data:image/png;base64,{{screenshot_base64}}\"}}}}")
+                    code_lines.append(f"                            ]}}")
+                    code_lines.append(f"                        ],")
+                    code_lines.append(f"                        temperature=0.0,")
+                    code_lines.append(f"                        max_tokens=200")
+                    code_lines.append(f"                    )")
+                    code_lines.append(f"                    ")
+                    code_lines.append(f"                    verification_result = response.choices[0].message.content.strip()")
+                    code_lines.append(f"                    print(f'[TEST] Action {i} VLLM验证结果: {{verification_result}}')")
+                    code_lines.append(f"                    ")
+                    code_lines.append(f"                    # 断言验证结果")
+                    code_lines.append(f"                    assert '是' in verification_result or 'yes' in verification_result.lower(), f'验证失败: {{verification_result}}'")
+                    code_lines.append(f"                    print(f'[TEST] Action {i} 验证通过')")
                     code_lines.append(f"                except Exception as e:")
-                    code_lines.append(f"                    print(f'[TEST] Action {i}: 截图失败 - {{e}}')")
+                    code_lines.append(f"                    print(f'[TEST] Action {i} 验证出错: {{e}}')")
+                    code_lines.append(f"                    # 保存截图用于调试")
+                    code_lines.append(f"                    await page.screenshot(path=f'action_{i}_verify_failed.png')")
+                    code_lines.append(f"                    raise")
                 else:
-                    # 生成代码，使用 action_result 中的 text_to_fill
-                    action_code = sync_computer_use_service.generate_playwright_code_from_coordinates(
-                        action=action_result.get("action", "click"),
-                        coordinates=action_result.get("coordinates", {}),
-                        text_to_fill=action_result.get("text_to_fill"),
-                        is_last=is_last
+                    # 如果启用了自动验证码检测，在执行操作前检查验证码
+                    if auto_detect_captcha:
+                        detect_and_handle_captcha(page, api_key, base_url, vl_model)
+                        time.sleep(1)  # 等待验证码填写完成
+
+                    print(f"   [子进程] 正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
+                    
+                    # 使用同步版本的 Computer-Use 服务分析页面并生成操作
+                    action_result = sync_computer_use_service.analyze_page_and_generate_action(
+                        page=page,
+                        action_description=action
                     )
 
-                    print(f"   [子进程] 生成的代码:\n{action_code}")
+                    if not action_result.get("element_found"):
+                        print(f"   [子进程] ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                        # 生成一个注释说明未找到元素
+                        code_lines.append(f"                # ⚠️ 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                        code_lines.append(f"                # 尝试通过文本内容查找并验证")
+                        code_lines.append(f"                try:")
+                        code_lines.append(f"                    # 等待页面稳定")
+                        code_lines.append(f"                    await page.wait_for_timeout(2000)")
+                        code_lines.append(f"                    # 截图用于调试")
+                        code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
+                        code_lines.append(f"                    print('[TEST] Action {i}: 截图已保存到 action_{i}_screenshot.png')")
+                        code_lines.append(f"                except Exception as e:")
+                        code_lines.append(f"                    print(f'[TEST] Action {i}: 截图失败 - {{e}}')")
+                    else:
+                        # 生成代码，使用 action_result 中的 text_to_fill
+                        action_code = sync_computer_use_service.generate_playwright_code_from_coordinates(
+                            action=action_result.get("action", "click"),
+                            coordinates=action_result.get("coordinates", {}),
+                            text_to_fill=action_result.get("text_to_fill"),
+                            is_last=is_last
+                        )
 
-                    for line in action_code.strip().split('\n'):
-                        code_lines.append(f"                {line}")
+                        print(f"   [子进程] 生成的代码:\n{action_code}")
 
-                    # 执行操作以便进行下一步截图分析
-                    sync_computer_use_service.execute_action_with_coordinates(page, action_result)
+                        for line in action_code.strip().split('\n'):
+                            code_lines.append(f"                {line}")
+
+                        # 执行操作以便进行下一步截图分析
+                        sync_computer_use_service.execute_action_with_coordinates(page, action_result)
+
+                    # 如果启用了自动验证码检测，在执行操作后也检查验证码
+                    if auto_detect_captcha:
+                        time.sleep(1)  # 等待页面更新
+                        detect_and_handle_captcha(page, api_key, base_url, vl_model)
 
                 code_lines.append("                await asyncio.sleep(3)")
                 code_lines.append(f"                print('[TEST] Action {i} completed')")
 
                 collected_codes.extend(code_lines)
-
-                # 如果启用了自动验证码检测，在执行操作后也检查验证码
-                if auto_detect_captcha:
-                    time.sleep(1)  # 等待页面更新
-                    detect_and_handle_captcha(page, api_key, base_url, vl_model)
 
             browser.close()
             print(f"   [子进程] Playwright 任务处理完成")
