@@ -2,7 +2,6 @@ from pydantic_settings import BaseSettings
 from typing import List
 import os
 
-
 class Settings(BaseSettings):
     # 百练平台配置
     BAILIAN_API_KEY: str
@@ -27,6 +26,9 @@ class Settings(BaseSettings):
 
     # 会话存储配置
     SESSION_STORAGE_PATH: str = ""  # cookies、localStorage、sessionStorage文件的存储路径
+
+    # Python路径配置（用于测试脚本导入app模块）
+    PYTHON_PATH: str = ""  # 项目根目录路径
 
     # 工作目录
     BASE_DIR: str = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
