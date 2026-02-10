@@ -222,6 +222,32 @@ async def get_test_case_reports(
     return result.scalars().all()
 
 
+@router.get("/{test_case_id}/reports/{report_id}/steps", response_model=List[TestStepResultResponse])
+async def get_test_report_steps(
+    test_case_id: int,
+    report_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取测试报告的步骤执行详情"""
+    # 验证报告是否属于该测试用例
+    report_result = await db.execute(
+        select(TestReport)
+        .where(TestReport.id == report_id)
+        .where(TestReport.test_case_id == test_case_id)
+    )
+    report = report_result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(status_code=404, detail="报告不存在")
+
+    # 获取步骤结果
+    steps_result = await db.execute(
+        select(TestStepResult)
+        .where(TestStepResult.test_report_id == report_id)
+        .order_by(TestStepResult.step_number.asc())
+    )
+    return steps_result.scalars().all()
+
+
 @router.post("/quick-generate")
 async def quick_generate_test_case(
     user_query: str,

@@ -41,6 +41,11 @@ export const testCasesApi = {
     return api.get(`/test-cases/${id}/reports`)
   },
 
+  // 获取测试报告的步骤详情
+  getReportSteps(id, reportId) {
+    return api.get(`/test-cases/${id}/reports/${reportId}/steps`)
+  },
+
   // 快速生成测试用例
   quickGenerate(params) {
     return api.post('/test-cases/quick-generate', null, { params })
