@@ -194,6 +194,59 @@ async def execute_test_case(
         )
         db.add(test_report)
         await db.commit()
+        
+        # 保存步骤执行结果
+        step_results = execution_result.get("step_results", [])
+        for step_data in step_results:
+            if step_data.get("event") == "step_start":
+                # 创建步骤结果记录
+                test_step = TestStepResult(
+                    test_report_id=test_report.id,
+                    step_number=step_data.get("step_number"),
+                    step_name=step_data.get("step_name"),
+                    step_type=step_data.get("step_type", "action"),
+                    status="running",
+                    start_time=datetime.fromisoformat(step_data.get("start_time")) if step_data.get("start_time") else None,
+                    log_output=json.dumps(step_data, ensure_ascii=False)
+                )
+                db.add(test_step)
+            elif step_data.get("event") == "step_end":
+                # 更新步骤结果记录
+                step_number = step_data.get("step_number")
+                # 查找对应的 step_start 记录
+                existing_step = await db.execute(
+                    select(TestStepResult)
+                    .where(TestStepResult.test_report_id == test_report.id)
+                    .where(TestStepResult.step_number == step_number)
+                    .where(TestStepResult.status == "running")
+                    .order_by(TestStepResult.created_at.desc())
+                )
+                step = existing_step.scalar_one_or_none()
+                
+                if step:
+                    # 更新现有记录
+                    step.status = step_data.get("status", "passed")
+                    step.end_time = datetime.fromisoformat(step_data.get("end_time")) if step_data.get("end_time") else None
+                    step.execution_duration = step_data.get("execution_duration_ms")
+                    step.output_data = step_data.get("output_data")
+                    step.error_message = step_data.get("error_message")
+                else:
+                    # 创建新记录（如果没有对应的 step_start）
+                    test_step = TestStepResult(
+                        test_report_id=test_report.id,
+                        step_number=step_number,
+                        step_name="",  # 从 step_start 获取
+                        step_type="action",
+                        status=step_data.get("status", "passed"),
+                        end_time=datetime.fromisoformat(step_data.get("end_time")) if step_data.get("end_time") else None,
+                        execution_duration=step_data.get("execution_duration_ms"),
+                        output_data=step_data.get("output_data"),
+                        error_message=step_data.get("error_message"),
+                        log_output=json.dumps(step_data, ensure_ascii=False)
+                    )
+                    db.add(test_step)
+        
+        await db.commit()
 
         return execution_result
 

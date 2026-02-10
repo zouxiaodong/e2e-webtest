@@ -999,6 +999,35 @@ if __name__ == "__main__":
             except:
                 pass
 
+    def _parse_step_results(self, execution_output: str) -> List[Dict[str, Any]]:
+        """
+        解析测试脚本输出的步骤结果
+        Args:
+            execution_output: 测试脚本执行输出
+        Returns:
+            步骤结果列表
+        """
+        import json
+        import re
+        
+        step_results = []
+        lines = execution_output.split('\n')
+        
+        for line in lines:
+            try:
+                if line.strip().startswith('{'):
+                    step_data = json.loads(line.strip())
+                    
+                    # 只处理步骤开始和结束事件
+                    if step_data.get("event") in ["step_start", "step_end"]:
+                        step_results.append(step_data)
+            except json.JSONDecodeError:
+                continue
+            except Exception:
+                continue
+        
+        return step_results
+
     async def execute_saved_script(self, script: str) -> Dict[str, Any]:
         """
         执行已保存的测试脚本（不重新生成）
@@ -1020,6 +1049,10 @@ if __name__ == "__main__":
             
             execution_output = await self._execute_test(script)
             result["execution_output"] = execution_output
+            
+            # 解析步骤结果
+            step_results = self._parse_step_results(execution_output)
+            result["step_results"] = step_results
             
             # 检查执行结果
             if "FAILED" in execution_output or "Error" in execution_output:
