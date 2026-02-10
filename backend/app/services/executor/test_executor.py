@@ -738,7 +738,7 @@ if __name__ == "__main__":
         # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
         if auto_cookie_localstorage and load_saved_storage:
             action_codes.append("                # 加载保存的 cookies 和 localStorage")
-            action_codes.append("                import os, json")
+            action_codes.append("                import os")
             action_codes.append("                if os.path.exists('saved_cookies.json'):")
             action_codes.append("                    with open('saved_cookies.json', 'r', encoding='utf-8') as f:")
             action_codes.append("                        cookies = json.load(f)")
