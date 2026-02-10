@@ -101,3 +101,28 @@ class TestReport(Base):
 
     # 关系
     test_case = relationship("TestCase", back_populates="test_reports")
+    step_results = relationship("TestStepResult", back_populates="test_report", cascade="all, delete-orphan")
+
+
+class TestStepResult(Base):
+    """测试步骤执行结果模型 - 记录每一步的执行详情"""
+    __tablename__ = "test_step_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    test_report_id = Column(Integer, ForeignKey("test_reports.id"), nullable=False, comment="测试报告ID")
+    step_number = Column(Integer, nullable=False, comment="步骤序号")
+    step_name = Column(String(500), nullable=False, comment="步骤名称/描述")
+    step_type = Column(String(50), comment="步骤类型: navigation, click, fill, verify, wait, screenshot等")
+    status = Column(String(50), nullable=False, comment="执行状态: pending, running, passed, failed, skipped")
+    start_time = Column(DateTime, comment="开始执行时间")
+    end_time = Column(DateTime, comment="结束执行时间")
+    execution_duration = Column(Integer, comment="执行时长(毫秒)")
+    input_data = Column(JSON, comment="输入数据")
+    output_data = Column(JSON, comment="输出数据")
+    error_message = Column(Text, comment="错误信息")
+    screenshot_path = Column(String(500), comment="步骤截图路径")
+    log_output = Column(Text, comment="步骤执行日志")
+    created_at = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+
+    # 关系
+    test_report = relationship("TestReport", back_populates="step_results")

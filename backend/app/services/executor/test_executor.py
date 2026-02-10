@@ -893,66 +893,114 @@ if __name__ == "__main__":
 from playwright.async_api import async_playwright, expect
 import asyncio
 import traceback
+import json
+import time
+from datetime import datetime
+
+# 全局步骤结果列表
+step_results = []
+
+def log_step_start(step_number, step_name, step_type="action"):
+    """记录步骤开始"""
+    log_entry = {{
+        "event": "step_start",
+        "step_number": step_number,
+        "step_name": step_name,
+        "step_type": step_type,
+        "status": "running",
+        "start_time": datetime.now().isoformat(),
+        "timestamp": time.time()
+    }}
+    step_results.append(log_entry)
+    print(json.dumps(log_entry, ensure_ascii=False))
+
+def log_step_end(step_number, status="passed", output_data=None, error_message=None):
+    """记录步骤结束"""
+    end_time = datetime.now().isoformat()
+    # 找到对应的开始记录计算耗时
+    start_timestamp = None
+    for step in reversed(step_results):
+        if step.get("step_number") == step_number and step.get("event") == "step_start":
+            start_timestamp = step.get("timestamp")
+            break
+    
+    duration_ms = None
+    if start_timestamp:
+        duration_ms = int((time.time() - start_timestamp) * 1000)
+    
+    log_entry = {{
+        "event": "step_end",
+        "step_number": step_number,
+        "status": status,
+        "end_time": end_time,
+        "execution_duration_ms": duration_ms,
+        "output_data": output_data,
+        "error_message": error_message
+    }}
+    print(json.dumps(log_entry, ensure_ascii=False))
 
 @pytest.mark.asyncio
 async def test_generated():
-    print("[TEST] Test started")
+    print(json.dumps({{"event": "test_start", "message": "Test started"}}, ensure_ascii=False))
     browser = None
+    test_start_time = time.time()
+    
     try:
         async with async_playwright() as p:
-            print("[TEST] Launching browser")
+            print(json.dumps({{"event": "browser_launch_start"}}, ensure_ascii=False))
             browser = await p.chromium.launch(headless={browser_headless})
             page = await browser.new_page()
-            print("[TEST] Browser launched")
+            print(json.dumps({{"event": "browser_launch_end", "status": "success"}}, ensure_ascii=False))
 
             # Action 0: Navigate to target page
-            print("[TEST] Navigating to: {target_url}")
-            await page.goto("{target_url}")
-            print("[TEST] Page loaded")
-            
-            await page.wait_for_load_state("networkidle")
-            print("[TEST] Page network idle")
-            
-            await asyncio.sleep(3)
-            print("[TEST] Initial wait completed")
+            log_step_start(0, "Navigate to {target_url}", "navigation")
+            try:
+                await page.goto("{target_url}")
+                await page.wait_for_load_state("networkidle")
+                await asyncio.sleep(3)
+                log_step_end(0, "passed", {{"url": "{target_url}"}})
+            except Exception as e:
+                log_step_end(0, "failed", error_message=str(e))
+                raise
             
             try:
                 # Execute all actions
 {actions_str}
             except Exception as e:
-                print(f"[TEST] ERROR during actions: {{e}}")
-                print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+                print(json.dumps({{
+                    "event": "action_error",
+                    "error": str(e),
+                    "traceback": traceback.format_exc()
+                }}, ensure_ascii=False))
                 try:
                     await page.screenshot(path="error_screenshot.png")
-                    print("[TEST] Screenshot saved to error_screenshot.png")
+                    print(json.dumps({{"event": "screenshot_saved", "path": "error_screenshot.png"}}, ensure_ascii=False))
                 except:
                     pass
                 raise
 
-            print("[TEST] Final wait before closing")
-            await asyncio.sleep(30)  # Wait 30 seconds for debugging
+            print(json.dumps({{"event": "test_completed", "total_duration_ms": int((time.time() - test_start_time) * 1000)}}, ensure_ascii=False))
             
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
                 cookies = await page.context.cookies()
                 with open('saved_cookies.json', 'w', encoding='utf-8') as f:
                     json.dump(cookies, f, ensure_ascii=False, indent=2)
-                print('[TEST] Cookies saved')
                 ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
                 with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
                     f.write(ls_data)
-                print('[TEST] LocalStorage saved')
                 ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
                 with open('saved_sessionstorage.json', 'w', encoding='utf-8') as f:
                     f.write(ss_data)
-                print('[TEST] SessionStorage saved')
             
-            print("[TEST] Closing browser")
             await browser.close()
-            print("[TEST] Test completed")
+            
     except Exception as e:
-        print(f"[TEST] FATAL ERROR: {{e}}")
-        print(f"[TEST] Traceback: {{traceback.format_exc()}}")
+        print(json.dumps({{
+            "event": "test_failed",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }}, ensure_ascii=False))
         if browser:
             try:
                 await browser.close()

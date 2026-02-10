@@ -150,6 +150,28 @@ class TestCaseExecuteRequest(BaseModel):
 
 # ==================== 报告相关 Schemas ====================
 
+class TestStepResultResponse(BaseModel):
+    """测试步骤执行结果响应"""
+    id: int
+    test_report_id: int
+    step_number: int
+    step_name: str
+    step_type: Optional[str] = None
+    status: str
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    execution_duration: Optional[int] = None
+    input_data: Optional[Dict[str, Any]] = None
+    output_data: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    screenshot_path: Optional[str] = None
+    log_output: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class TestReportResponse(BaseModel):
     """测试报告响应"""
     id: int
@@ -161,6 +183,7 @@ class TestReportResponse(BaseModel):
     execution_time: Optional[int] = None
     screenshot_path: Optional[str] = None
     created_at: datetime
+    step_results: Optional[List[TestStepResultResponse]] = None
 
     class Config:
         from_attributes = True
