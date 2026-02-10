@@ -123,14 +123,15 @@ def process_playwright_task(task_data):
                     print(f"   [子进程] 操作 {i} 是验证类型，使用VLLM进行截图分析: {action}")
 
                     # 生成验证代码（使用BrowserUtil工具类）
+                    action_escaped = repr(action)
                     code_lines.append(f"                # Action {i}: {action}")
-                    code_lines.append(f"                log_step_start({i}, '{action}', 'verify')")
+                    code_lines.append(f"                log_step_start({i}, {action_escaped}, 'verify')")
                     code_lines.append(f"                try:")
                     code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
                     code_lines.append(f"                    browser_util = get_browser_util()")
                     code_lines.append(f"                    await browser_util.assert_by_screenshot(")
                     code_lines.append(f"                        page,")
-                    code_lines.append(f"                        verification_description='{action}',")
+                    code_lines.append(f"                        verification_description={action_escaped},")
                     code_lines.append(f"                        action_name='Action {i}'")
                     code_lines.append(f"                    )")
                     code_lines.append(f"                    log_step_end({i}, 'passed')")
@@ -154,8 +155,9 @@ def process_playwright_task(task_data):
                     if not action_result.get("element_found"):
                         print(f"   [子进程] ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
                         # 生成一个注释说明未找到元素
+                        action_escaped = repr(action)
                         code_lines.append(f"                # Action {i}: {action}")
-                        code_lines.append(f"                log_step_start({i}, '{action}', 'action')")
+                        code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
                         code_lines.append(f"                try:")
                         code_lines.append(f"                    await page.wait_for_timeout(2000)")
                         code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
@@ -172,8 +174,9 @@ def process_playwright_task(task_data):
 
                         print(f"   [子进程] 生成的代码:\n{action_code}")
 
+                        action_escaped = repr(action)
                         code_lines.append(f"                # Action {i}: {action}")
-                        code_lines.append(f"                log_step_start({i}, '{action}', 'action')")
+                        code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
                         code_lines.append(f"                try:")
                         for line in action_code.strip().split('\n'):
                             code_lines.append(f"                    {line}")
