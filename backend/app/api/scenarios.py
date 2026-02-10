@@ -289,10 +289,39 @@ async def generate_scenario_cases(
         # 提交所有测试用例
         await db.commit()
 
-        return {
-            "message": f"成功生成 {len(generated_cases)} 个测试用例",
-            "test_cases": generated_cases
-        }
+        # 获取该场景下的所有测试用例
+        cases_result = await db.execute(
+            select(TestCase)
+            .where(TestCase.scenario_id == scenario_id)
+            .order_by(TestCase.priority, TestCase.created_at)
+        )
+        test_cases = cases_result.scalars().all()
+
+        # 更新场景的total_cases
+        await db.execute(
+            update(TestScenario)
+            .where(TestScenario.id == scenario_id)
+            .values(total_cases=len(test_cases), status="generated")
+        )
+        await db.commit()
+
+        # 返回完整的场景数据
+        return TestScenarioWithCases(
+            id=scenario.id,
+            name=scenario.name,
+            description=scenario.description,
+            target_url=scenario.target_url,
+            user_query=scenario.user_query,
+            generation_strategy=scenario.generation_strategy,
+            total_cases=len(test_cases),
+            status="generated",
+            created_at=scenario.created_at,
+            updated_at=scenario.updated_at,
+            use_captcha=scenario.use_captcha,
+            auto_cookie_localstorage=scenario.auto_cookie_localstorage,
+            load_saved_storage=scenario.load_saved_storage,
+            test_cases=test_cases
+        )
 
     except Exception as e:
         # 回滚当前事务
