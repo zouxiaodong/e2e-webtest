@@ -295,6 +295,10 @@ const generateScenario = async (scenario) => {
     ElMessage.info('正在生成测试用例...')
     await scenariosApi.generate(scenario.id)
     ElMessage.success('生成成功')
+    // 如果当前正在查看该场景详情，刷新场景数据
+    if (currentScenario.value && currentScenario.value.id === scenario.id) {
+      currentScenario.value = await scenariosApi.getDetail(scenario.id)
+    }
     loadScenarios()
   } catch (error) {
     ElMessage.error('生成失败')
