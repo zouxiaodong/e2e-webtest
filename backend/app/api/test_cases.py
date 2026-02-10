@@ -4,14 +4,15 @@ from sqlalchemy import select, update
 from typing import List
 
 from ..core.database import get_db
-from ..models.test_case import TestCase, TestReport
+from ..models.test_case import TestCase, TestReport, TestStepResult
 from ..schemas.test_case import (
     TestCaseCreate,
     TestCaseUpdate,
     TestCaseResponse,
     TestCaseGenerateRequest,
     TestCaseExecuteRequest,
-    TestReportResponse
+    TestReportResponse,
+    TestStepResultResponse
 )
 from ..services.executor.test_executor import test_executor
 from ..services.generator.test_generator import test_generator
