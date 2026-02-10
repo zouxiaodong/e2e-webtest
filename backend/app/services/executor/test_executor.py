@@ -898,11 +898,18 @@ import time
 import sys
 import os
 from datetime import datetime
+from dotenv import load_dotenv
 
-# 添加项目根目录到Python路径，确保可以导入app模块
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-if project_root not in sys.path:
-    sys.path.insert(0, project_root)
+# 加载环境变量
+load_dotenv()
+
+# 使用环境变量配置的Python路径
+python_path = os.getenv('PYTHON_PATH')
+if python_path and python_path not in sys.path:
+    sys.path.insert(0, python_path)
+
+# 使用环境变量配置的Session存储路径
+session_storage_path = os.getenv('SESSION_STORAGE_PATH', '.')
 
 # 全局步骤结果列表
 step_results = []
@@ -991,13 +998,18 @@ async def test_generated():
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
                 cookies = await page.context.cookies()
-                with open('saved_cookies.json', 'w', encoding='utf-8') as f:
+                cookies_path = os.path.join(session_storage_path, 'saved_cookies.json')
+                with open(cookies_path, 'w', encoding='utf-8') as f:
                     json.dump(cookies, f, ensure_ascii=False, indent=2)
+                
                 ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
-                with open('saved_localstorage.json', 'w', encoding='utf-8') as f:
+                ls_path = os.path.join(session_storage_path, 'saved_localstorage.json')
+                with open(ls_path, 'w', encoding='utf-8') as f:
                     f.write(ls_data)
+                
                 ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
-                with open('saved_sessionstorage.json', 'w', encoding='utf-8') as f:
+                ss_path = os.path.join(session_storage_path, 'saved_sessionstorage.json')
+                with open(ss_path, 'w', encoding='utf-8') as f:
                     f.write(ss_data)
             
             await browser.close()
