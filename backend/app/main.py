@@ -1,14 +1,20 @@
 import asyncio
 import sys
+import os
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
-from .core.config import settings
-from .core.database import init_db
-from .api import test_cases, scenarios, configs
+# 添加项目根目录到Python路径，确保测试脚本可以导入app模块
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
+from app.core.config import settings
+from app.core.database import init_db
+from app.api import test_cases, scenarios, configs
 
 # 配置日志
 logging.basicConfig(
