@@ -209,7 +209,9 @@ async def generate_scenario_cases(
 
         # 为每个用例生成操作步骤和脚本
         generated_cases = []
-        for case_data in test_cases_data:
+        print(f"   开始处理 {len(test_cases_data)} 个测试用例数据...")
+        for idx, case_data in enumerate(test_cases_data, 1):
+            print(f"   处理第 {idx}/{len(test_cases_data)} 个用例: {case_data.get('name', 'Unknown')}")
             # 生成操作步骤
             actions = await test_generator.generate_actions(
                 case_data["user_query"],

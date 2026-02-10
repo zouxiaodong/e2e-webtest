@@ -129,9 +129,10 @@
           <el-descriptions-item label="场景描述" :span="2">{{ currentScenario.user_query }}</el-descriptions-item>
         </el-descriptions>
 
-        <div v-if="currentScenario.test_cases && currentScenario.test_cases.length > 0" style="margin-top: 20px">
+        <div v-if="currentScenario.test_cases" style="margin-top: 20px">
           <h3>测试用例列表</h3>
-          <el-table :data="currentScenario.test_cases" stripe>
+          <el-empty v-if="currentScenario.test_cases.length === 0" description="暂无测试用例" />
+          <el-table v-else :data="currentScenario.test_cases" stripe>
             <el-table-column prop="name" label="用例名称" width="200" />
             <el-table-column prop="description" label="描述" show-overflow-tooltip />
             <el-table-column prop="priority" label="优先级" width="100">
