@@ -153,7 +153,7 @@ async def delete_scenario(
     return {"message": "测试场景已删除"}
 
 
-@router.post("/{scenario_id}/generate")
+@router.post("/{scenario_id}/generate", response_model=TestScenarioWithCases)
 async def generate_scenario_cases(
     scenario_id: int,
     generation_strategy: Optional[GenerationStrategy] = None,
