@@ -888,28 +888,29 @@ if __name__ == "__main__":
 
         actions_str = "\n".join(action_codes)
 
+        # 读取环境变量配置
+        python_path = os.getenv('PYTHON_PATH', '')
+        session_storage_path = os.getenv('SESSION_STORAGE_PATH', '.')
+
         # 生成完整脚本
-        script = f'''import pytest
+        script = f'''import sys
+import os
+
+# 配置常量（从环境变量读取）
+PYTHON_PATH = r'{python_path}'
+SESSION_STORAGE_PATH = r'{session_storage_path}'
+
+# 必须在最开头处理PYTHON_PATH，否则后续import可能找不到模块
+if PYTHON_PATH and PYTHON_PATH not in sys.path:
+    sys.path.insert(0, PYTHON_PATH)
+
+import pytest
 from playwright.async_api import async_playwright, expect
 import asyncio
 import traceback
 import json
 import time
-import sys
-import os
 from datetime import datetime
-from dotenv import load_dotenv
-
-# 加载环境变量
-load_dotenv()
-
-# 使用环境变量配置的Python路径
-python_path = os.getenv('PYTHON_PATH')
-if python_path and python_path not in sys.path:
-    sys.path.insert(0, python_path)
-
-# 使用环境变量配置的Session存储路径
-session_storage_path = os.getenv('SESSION_STORAGE_PATH', '.')
 
 # 全局步骤结果列表
 step_results = []
@@ -998,17 +999,17 @@ async def test_generated():
             # Save cookies, localStorage and sessionStorage if enabled
             if {auto_cookie_localstorage}:
                 cookies = await page.context.cookies()
-                cookies_path = os.path.join(session_storage_path, 'saved_cookies.json')
+                cookies_path = os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json')
                 with open(cookies_path, 'w', encoding='utf-8') as f:
                     json.dump(cookies, f, ensure_ascii=False, indent=2)
                 
                 ls_data = await page.evaluate('() => JSON.stringify(localStorage)')
-                ls_path = os.path.join(session_storage_path, 'saved_localstorage.json')
+                ls_path = os.path.join(SESSION_STORAGE_PATH, 'saved_localstorage.json')
                 with open(ls_path, 'w', encoding='utf-8') as f:
                     f.write(ls_data)
                 
                 ss_data = await page.evaluate('() => JSON.stringify(sessionStorage)')
-                ss_path = os.path.join(session_storage_path, 'saved_sessionstorage.json')
+                ss_path = os.path.join(SESSION_STORAGE_PATH, 'saved_sessionstorage.json')
                 with open(ss_path, 'w', encoding='utf-8') as f:
                     f.write(ss_data)
             

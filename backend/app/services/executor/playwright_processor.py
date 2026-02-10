@@ -72,6 +72,12 @@ def process_playwright_task(task_data):
             browser = sync_computer_use_service.p.chromium.launch(headless=browser_headless)
             page = browser.new_page()
 
+            # 先导航到目标页面
+            print(f"   [子进程] 正在导航到: {target_url}")
+            page.goto(target_url)
+            page.wait_for_load_state("networkidle")
+            time.sleep(2)
+
             # 如果需要加载保存的storage
             if load_saved_storage:
                 print("   [子进程] 正在加载保存的 cookies 和 storage...")
@@ -94,10 +100,6 @@ def process_playwright_task(task_data):
                 page.reload(wait_until="domcontentloaded")
                 time.sleep(5)
                 print("   [子进程] ✅ 页面刷新完成")
-            else:
-                page.goto(target_url)
-                page.wait_for_load_state("networkidle")
-                time.sleep(2)
 
             for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
                 is_last = i == len(actions) - 1
