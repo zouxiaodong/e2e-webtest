@@ -288,6 +288,18 @@ class SyncComputerUseService:
         self.api_key = settings.BAILIAN_API_KEY
         self.base_url = settings.BAILIAN_BASE_URL
 
+    def __enter__(self):
+        """上下文管理器入口"""
+        from playwright.sync_api import sync_playwright
+        self.p = sync_playwright().start()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """上下文管理器出口"""
+        if hasattr(self, 'p'):
+            self.p.stop()
+        return False
+
     def analyze_page_and_generate_action(
         self,
         page,
