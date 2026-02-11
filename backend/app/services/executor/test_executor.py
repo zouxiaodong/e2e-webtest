@@ -737,22 +737,17 @@ if __name__ == "__main__":
 
         # 如果需要自动加载 Cookie/LocalStorage，添加加载代码
         if auto_cookie_localstorage and load_saved_storage:
-            action_codes.append("                # 加载保存的 cookies 和 localStorage")
-            action_codes.append("                import os")
-            action_codes.append("                if os.path.exists('saved_cookies.json'):")
-            action_codes.append("                    with open('saved_cookies.json', 'r', encoding='utf-8') as f:")
-            action_codes.append("                        cookies = json.load(f)")
-            action_codes.append("                    await page.context.add_cookies(cookies)")
-            action_codes.append("                    print('Cookies 已加载')")
-            action_codes.append("                if os.path.exists('saved_localstorage.json'):")
-            action_codes.append("                    with open('saved_localstorage.json', 'r', encoding='utf-8') as f:")
-            action_codes.append("                        ls_data = f.read()")
-            action_codes.append("                    try:")
-            action_codes.append("                        ls_data_obj = json.loads(ls_data)")
-            action_codes.append("                        await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data_obj)")
-            action_codes.append("                    except json.JSONDecodeError:")
-            action_codes.append("                        await page.evaluate(\"data => { localStorage.clear(); for (const key in data) { localStorage.setItem(key, data[key]); } }\", ls_data)")
-            action_codes.append("                    print('LocalStorage 已加载')")
+            action_codes.append(f"                # 加载保存的 cookies、localStorage 和 sessionStorage（使用 browser_util）")
+            action_codes.append(f"                try:")
+            action_codes.append(f"                    from app.utils.browser_util import get_browser_util")
+            action_codes.append(f"                    browser_util = get_browser_util()")
+            action_codes.append(f"                    await browser_util.load_storage(")
+            action_codes.append(f"                        cookies_path=os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json'),")
+            action_codes.append(f"                        localstorage_path=os.path.join(SESSION_STORAGE_PATH, 'saved_localstorage.json'),")
+            action_codes.append(f"                        sessionstorage_path=os.path.join(SESSION_STORAGE_PATH, 'saved_sessionstorage.json')")
+            action_codes.append(f"                    )")
+            action_codes.append(f"                except Exception as e:")
+            action_codes.append(f"                    print(f'加载 storage 失败: {{e}}')")
 
         # 如果需要自动检测验证码，添加验证码处理代码
         if auto_detect_captcha:
