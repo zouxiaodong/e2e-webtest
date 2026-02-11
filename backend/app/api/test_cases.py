@@ -304,7 +304,8 @@ async def get_test_report_steps(
         .where(TestStepResult.test_report_id == report_id)
         .order_by(TestStepResult.step_number.asc())
     )
-    return steps_result.scalars().all()
+    steps = steps_result.scalars().all()
+    return steps
 
 
 @router.post("/quick-generate")

@@ -13,7 +13,7 @@ from ..models.test_session import TestSession
 Base = BaseModel
 
 # 导入所有模型以确保它们被注册到 Base.metadata
-from ..models.test_case import TestScenario, TestCase, TestReport
+from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResult
 
 # 创建异步数据库引擎
 engine = create_async_engine(
