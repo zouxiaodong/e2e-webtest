@@ -46,6 +46,11 @@ export const scenariosApi = {
     return api.get(`/scenarios/${id}/reports`)
   },
 
+  // 获取场景报告的步骤详情
+  getReportSteps(id, reportId) {
+    return api.get(`/scenarios/${id}/reports/${reportId}/steps`)
+  },
+
   // 快速生成场景
   quickGenerate(data) {
     return api.post('/scenarios/quick-generate', data)

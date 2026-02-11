@@ -35,7 +35,7 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="400" fixed="right">
+        <el-table-column label="操作" width="500" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="editScenario(row)">
               编辑
@@ -48,6 +48,9 @@
             </el-button>
             <el-button size="small" @click="viewScenario(row)">
               查看
+            </el-button>
+            <el-button size="small" type="primary" @click="viewReports(row)">
+              报告
             </el-button>
             <el-button size="small" type="danger" @click="deleteScenario(row)">
               删除
@@ -195,6 +198,73 @@
         </div>
       </div>
     </el-dialog>
+
+    <!-- 查看场景报告对话框 -->
+    <el-dialog v-model="reportsDialogVisible" title="场景执行报告" width="1200px">
+      <div v-if="currentScenario">
+        <el-tabs v-model="activeReportTab">
+          <el-tab-pane label="报告列表" name="list">
+            <el-table :data="reports" v-loading="reportsLoading">
+              <el-table-column prop="id" label="ID" width="80" />
+              <el-table-column prop="test_case_name" label="测试用例" width="200" show-overflow-tooltip />
+              <el-table-column prop="status" label="状态" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.status === 'passed' ? 'success' : 'danger'">
+                    {{ row.status === 'passed' ? '通过' : '失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="execution_time" label="执行时间(ms)" width="120" />
+              <el-table-column prop="created_at" label="创建时间" width="180">
+                <template #default="{ row }">
+                  {{ formatDate(row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="100">
+                <template #default="{ row }">
+                  <el-button size="small" @click="viewReportSteps(row)">查看步骤</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+          <el-tab-pane label="步骤详情" name="steps">
+            <div v-if="currentReport">
+              <el-table :data="stepResults" v-loading="stepsLoading">
+                <el-table-column prop="step_number" label="步骤序号" width="100" />
+                <el-table-column prop="step_name" label="步骤名称" width="300" show-overflow-tooltip />
+                <el-table-column prop="step_type" label="类型" width="100">
+                  <template #default="{ row }">
+                    <el-tag size="small">{{ row.step_type }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="status" label="状态" width="100">
+                  <template #default="{ row }">
+                    <el-tag :type="getStepStatusType(row.status)" size="small">
+                      {{ getStepStatusText(row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="execution_duration" label="耗时(ms)" width="100" />
+                <el-table-column prop="error_message" label="错误信息" width="200" show-overflow-tooltip />
+                <el-table-column prop="start_time" label="开始时间" width="180">
+                  <template #default="{ row }">
+                    {{ formatDateTime(row.start_time) }}
+                  </template>
+                </el-table-column>
+                <el-table-column prop="end_time" label="结束时间" width="180">
+                  <template #default="{ row }">
+                    {{ formatDateTime(row.end_time) }}
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div v-else>
+              <el-empty description="请先选择一个报告查看步骤详情" />
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -208,11 +278,18 @@ const scenarios = ref([])
 const loading = ref(false)
 const createDialogVisible = ref(false)
 const viewDialogVisible = ref(false)
+const reportsDialogVisible = ref(false)
 const currentScenario = ref(null)
 const testCaseDetailVisible = ref(false)
 const currentTestCase = ref(null)
 const isEdit = ref(false)
 const editingScenarioId = ref(null)
+const reports = ref([])
+const reportsLoading = ref(false)
+const stepsLoading = ref(false)
+const stepResults = ref([])
+const currentReport = ref(null)
+const activeReportTab = ref('list')
 
 const createForm = ref({
   name: '',
@@ -422,6 +499,65 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+// 格式化日期时间
+const formatDateTime = (dateStr) => {
+  if (!dateStr) return '-'
+  const date = new Date(dateStr)
+  return date.toLocaleString('zh-CN')
+}
+
+// 查看场景报告
+const viewReports = async (scenario) => {
+  try {
+    reportsDialogVisible.value = true
+    currentScenario.value = scenario
+    reports.value = await scenariosApi.getReports(scenario.id)
+    activeReportTab.value = 'list'
+    stepResults.value = []
+    currentReport.value = null
+  } catch (error) {
+    ElMessage.error('加载报告列表失败')
+  }
+}
+
+// 查看报告步骤
+const viewReportSteps = async (report) => {
+  try {
+    stepsLoading.value = true
+    currentReport.value = report
+    stepResults.value = await scenariosApi.getReportSteps(currentScenario.value.id, report.id)
+    activeReportTab.value = 'steps'
+  } catch (error) {
+    ElMessage.error('加载步骤详情失败')
+  } finally {
+    stepsLoading.value = false
+  }
+}
+
+// 获取步骤状态类型
+const getStepStatusType = (status) => {
+  const types = {
+    pending: 'info',
+    running: 'warning',
+    passed: 'success',
+    failed: 'danger',
+    skipped: 'info'
+  }
+  return types[status] || 'info'
+}
+
+// 获取步骤状态文本
+const getStepStatusText = (status) => {
+  const texts = {
+    pending: '待执行',
+    running: '执行中',
+    passed: '通过',
+    failed: '失败',
+    skipped: '跳过'
+  }
+  return texts[status] || status
 }
 
 // 查看测试用例详情

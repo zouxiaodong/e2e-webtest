@@ -194,6 +194,7 @@ async def execute_test_case(
         )
         db.add(test_report)
         await db.commit()
+        await db.refresh(test_report)  # 刷新以获取 ID
         
         # 保存步骤执行结果
         step_results = execution_result.get("step_results", [])
