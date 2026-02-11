@@ -273,7 +273,10 @@ async def get_test_case_reports(
     """获取测试用例的报告列表"""
     result = await db.execute(
         select(TestReport)
-        .options(selectinload(TestReport.test_case))
+        .options(
+            selectinload(TestReport.test_case),
+            selectinload(TestReport.step_results)
+        )
         .where(TestReport.test_case_id == test_case_id)
         .order_by(TestReport.created_at.desc())
     )
@@ -305,14 +308,23 @@ async def get_test_report_steps(
         raise HTTPException(status_code=404, detail="报告不存在")
 
     # 获取步骤结果
-    steps_result = await db.execute(
-        select(TestStepResult)
-        .options(raiseload(TestStepResult.test_report))
-        .where(TestStepResult.test_report_id == report_id)
-        .order_by(TestStepResult.step_number.asc())
-    )
-    steps = steps_result.scalars().all()
-    return steps
+    print(f"📋 查询步骤结果 - report_id: {report_id}, test_case_id: {test_case_id}")
+    try:
+        steps_result = await db.execute(
+            select(TestStepResult)
+            .options(raiseload(TestStepResult.test_report))
+            .where(TestStepResult.test_report_id == report_id)
+            .order_by(TestStepResult.step_number.asc())
+        )
+        steps = steps_result.scalars().all()
+        print(f"📋 找到 {len(steps)} 个步骤结果")
+        return steps
+    except Exception as e:
+        print(f"❌ 查询步骤结果失败: {e}")
+        print(f"❌ 错误类型: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"查询步骤结果失败: {str(e)}")
 
 
 @router.post("/quick-generate")
