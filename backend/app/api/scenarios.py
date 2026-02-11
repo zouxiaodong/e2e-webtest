@@ -5,7 +5,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, raiseload
 from typing import List, Optional
 
 from ..core.database import get_db
@@ -528,6 +528,7 @@ async def get_scenario_report_steps(
     # 获取步骤结果
     steps_result = await db.execute(
         select(TestStepResult)
+        .options(raiseload(TestStepResult.test_report))
         .where(TestStepResult.test_report_id == report_id)
         .order_by(TestStepResult.step_number.asc())
     )
