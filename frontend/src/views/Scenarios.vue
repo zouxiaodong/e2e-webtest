@@ -35,7 +35,7 @@
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="500" fixed="right">
+        <el-table-column label="操作" width="400" fixed="right">
           <template #default="{ row }">
             <el-button size="small" @click="editScenario(row)">
               编辑
@@ -48,9 +48,6 @@
             </el-button>
             <el-button size="small" @click="viewScenario(row)">
               查看
-            </el-button>
-            <el-button size="small" type="primary" @click="viewReports(row)">
-              报告
             </el-button>
             <el-button size="small" type="danger" @click="deleteScenario(row)">
               删除
@@ -158,10 +155,13 @@
               </template>
             </el-table-column>
             <el-table-column prop="execution_count" label="执行次数" width="100" />
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="180">
               <template #default="{ row }">
                 <el-button size="small" @click="viewTestCaseScript(row)">
                   查看脚本
+                </el-button>
+                <el-button size="small" type="primary" @click="viewTestCaseReports(row)" :disabled="row.status !== 'generated' && row.status !== 'completed'">
+                  报告
                 </el-button>
               </template>
             </el-table-column>
@@ -564,6 +564,20 @@ const getStepStatusText = (status) => {
 const viewTestCaseScript = (testCase) => {
   currentTestCase.value = testCase
   testCaseDetailVisible.value = true
+}
+
+// 查看测试用例报告
+const viewTestCaseReports = async (testCase) => {
+  try {
+    reportsDialogVisible.value = true
+    currentScenario.value = currentScenario.value
+    reports.value = await testCasesApi.getReports(testCase.id)
+    activeReportTab.value = 'list'
+    stepResults.value = []
+    currentReport.value = null
+  } catch (error) {
+    ElMessage.error('加载报告列表失败')
+  }
 }
 
 onMounted(() => {

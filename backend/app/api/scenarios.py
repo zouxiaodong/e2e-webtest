@@ -8,7 +8,7 @@ from sqlalchemy import select, update, delete
 from typing import List, Optional
 
 from ..core.database import get_db
-from ..models.test_case import TestScenario, TestCase, TestReport
+from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResult
 from ..models.global_config import GlobalConfig, ConfigKeys
 from ..schemas.test_case import (
     TestScenarioCreate,
@@ -500,7 +500,8 @@ async def get_scenario_reports(
 ):
     """获取场景下所有用例的报告"""
     result = await db.execute(
-        select(TestReport)
+        select(TestReport, TestCase.name.label("test_case_name"))
+        .join(TestCase, TestReport.test_case_id == TestCase.id)
         .where(TestReport.scenario_id == scenario_id)
         .order_by(TestReport.created_at.desc())
     )

@@ -176,6 +176,7 @@ class TestReportResponse(BaseModel):
     """测试报告响应"""
     id: int
     test_case_id: int
+    test_case_name: Optional[str] = None
     scenario_id: Optional[int] = None
     status: str
     result: Optional[str] = None

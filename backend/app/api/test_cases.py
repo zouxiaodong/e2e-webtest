@@ -271,7 +271,8 @@ async def get_test_case_reports(
 ):
     """获取测试用例的报告列表"""
     result = await db.execute(
-        select(TestReport)
+        select(TestReport, TestCase.name.label("test_case_name"))
+        .join(TestCase, TestReport.test_case_id == TestCase.id)
         .where(TestReport.test_case_id == test_case_id)
         .order_by(TestReport.created_at.desc())
     )
