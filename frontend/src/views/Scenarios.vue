@@ -273,6 +273,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { scenariosApi } from '@/api/scenarios'
+import { testCasesApi } from '@/api/testCases'
 
 const scenarios = ref([])
 const loading = ref(false)
@@ -282,6 +283,7 @@ const reportsDialogVisible = ref(false)
 const currentScenario = ref(null)
 const testCaseDetailVisible = ref(false)
 const currentTestCase = ref(null)
+const currentTestCaseForReports = ref(null)
 const isEdit = ref(false)
 const editingScenarioId = ref(null)
 const reports = ref([])
@@ -522,20 +524,6 @@ const viewReports = async (scenario) => {
   }
 }
 
-// 查看报告步骤
-const viewReportSteps = async (report) => {
-  try {
-    stepsLoading.value = true
-    currentReport.value = report
-    stepResults.value = await scenariosApi.getReportSteps(currentScenario.value.id, report.id)
-    activeReportTab.value = 'steps'
-  } catch (error) {
-    ElMessage.error('加载步骤详情失败')
-  } finally {
-    stepsLoading.value = false
-  }
-}
-
 // 获取步骤状态类型
 const getStepStatusType = (status) => {
   const types = {
@@ -571,12 +559,27 @@ const viewTestCaseReports = async (testCase) => {
   try {
     reportsDialogVisible.value = true
     currentScenario.value = currentScenario.value
+    currentTestCaseForReports.value = testCase
     reports.value = await testCasesApi.getReports(testCase.id)
     activeReportTab.value = 'list'
     stepResults.value = []
     currentReport.value = null
   } catch (error) {
     ElMessage.error('加载报告列表失败')
+  }
+}
+
+// 查看报告步骤
+const viewReportSteps = async (report) => {
+  try {
+    stepsLoading.value = true
+    currentReport.value = report
+    stepResults.value = await testCasesApi.getReportSteps(currentTestCaseForReports.value.id, report.id)
+    activeReportTab.value = 'steps'
+  } catch (error) {
+    ElMessage.error('加载步骤详情失败')
+  } finally {
+    stepsLoading.value = false
   }
 }
 
