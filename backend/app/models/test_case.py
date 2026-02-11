@@ -102,6 +102,9 @@ class TestReport(Base):
     # 关系
     test_case = relationship("TestCase", back_populates="test_reports")
     step_results = relationship("TestStepResult", back_populates="test_report", cascade="all, delete-orphan")
+    
+    # 动态属性（用于 API 响应）
+    test_case_name = None
 
 
 class TestStepResult(Base):

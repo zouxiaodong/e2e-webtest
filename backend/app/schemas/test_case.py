@@ -175,6 +175,7 @@ class TestReportResponse(BaseModel):
     """测试报告响应"""
     id: int
     test_case_id: int
+    test_case_name: Optional[str] = None
     scenario_id: Optional[int] = None
     status: str
     result: Optional[str] = None
@@ -184,14 +185,7 @@ class TestReportResponse(BaseModel):
     created_at: datetime
     step_results: Optional[List[TestStepResultResponse]] = None
 
-    @computed_field
-    @property
-    def test_case_name(self) -> Optional[str]:
-        """从关联的测试用例获取名称"""
-        return self.test_case.name if self.test_case else None
-
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 # ==================== 快速生成相关 Schemas ====================

@@ -506,7 +506,14 @@ async def get_scenario_reports(
         .where(TestReport.scenario_id == scenario_id)
         .order_by(TestReport.created_at.desc())
     )
-    return result.scalars().all()
+    reports = result.scalars().all()
+    
+    # 手动设置 test_case_name
+    for report in reports:
+        if report.test_case:
+            report.test_case_name = report.test_case.name
+    
+    return reports
 
 @router.get("/{scenario_id}/reports/{report_id}/steps", response_model=List[TestStepResultResponse])
 async def get_scenario_report_steps(

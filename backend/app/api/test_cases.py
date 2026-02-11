@@ -278,6 +278,12 @@ async def get_test_case_reports(
         .order_by(TestReport.created_at.desc())
     )
     reports = result.scalars().all()
+    
+    # 手动设置 test_case_name
+    for report in reports:
+        if report.test_case:
+            report.test_case_name = report.test_case.name
+    
     return reports
 
 
