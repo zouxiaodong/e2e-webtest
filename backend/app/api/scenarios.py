@@ -20,6 +20,7 @@ from ..schemas.test_case import (
     QuickGenerateRequest,
     TestCaseResponse,
     TestReportResponse,
+    TestStepResultResponse,
     GenerationStrategy
 )
 from ..services.executor.test_executor import test_executor
