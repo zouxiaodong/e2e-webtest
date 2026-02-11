@@ -210,6 +210,7 @@ async def execute_test_case(
                     log_output=json.dumps(step_data, ensure_ascii=False)
                 )
                 db.add(test_step)
+                await db.commit()  # 立即提交，确保 step_end 能找到
             elif step_data.get("event") == "step_end":
                 # 更新步骤结果记录
                 step_number = step_data.get("step_number")
