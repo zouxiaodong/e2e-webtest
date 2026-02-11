@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
-from typing import List
+from sqlalchemy import select, update, delete
+from sqlalchemy.orm import selectinload
+from typing import List, Optional
 
 from ..core.database import get_db
 from ..models.test_case import TestCase, TestReport, TestStepResult
@@ -271,12 +272,13 @@ async def get_test_case_reports(
 ):
     """获取测试用例的报告列表"""
     result = await db.execute(
-        select(TestReport, TestCase.name.label("test_case_name"))
-        .join(TestCase, TestReport.test_case_id == TestCase.id)
+        select(TestReport)
+        .options(selectinload(TestReport.test_case))
         .where(TestReport.test_case_id == test_case_id)
         .order_by(TestReport.created_at.desc())
     )
-    return result.scalars().all()
+    reports = result.scalars().all()
+    return reports
 
 
 @router.get("/{test_case_id}/reports/{report_id}/steps", response_model=List[TestStepResultResponse])

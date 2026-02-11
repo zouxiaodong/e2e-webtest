@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, computed_field
 from typing import List, Optional, Any, Dict
 from datetime import datetime
 from enum import Enum
@@ -176,7 +176,6 @@ class TestReportResponse(BaseModel):
     """测试报告响应"""
     id: int
     test_case_id: int
-    test_case_name: Optional[str] = None
     scenario_id: Optional[int] = None
     status: str
     result: Optional[str] = None
@@ -185,6 +184,12 @@ class TestReportResponse(BaseModel):
     screenshot_path: Optional[str] = None
     created_at: datetime
     step_results: Optional[List[TestStepResultResponse]] = None
+
+    @computed_field
+    @property
+    def test_case_name(self) -> Optional[str]:
+        """从关联的测试用例获取名称"""
+        return self.test_case.name if self.test_case else None
 
     class Config:
         from_attributes = True

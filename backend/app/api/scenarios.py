@@ -5,6 +5,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, delete
+from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 from ..core.database import get_db
@@ -500,8 +501,8 @@ async def get_scenario_reports(
 ):
     """获取场景下所有用例的报告"""
     result = await db.execute(
-        select(TestReport, TestCase.name.label("test_case_name"))
-        .join(TestCase, TestReport.test_case_id == TestCase.id)
+        select(TestReport)
+        .options(selectinload(TestReport.test_case))
         .where(TestReport.scenario_id == scenario_id)
         .order_by(TestReport.created_at.desc())
     )
