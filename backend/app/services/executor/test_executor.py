@@ -20,13 +20,26 @@ from ..computer_use.computer_use_service import computer_use_service
 load_dotenv()
 
 
-def _init_worker_process():
-    """初始化工作进程 - 设置Windows事件循环策略"""
+def _run_playwright_in_thread(task_func, *args, **kwargs):
+    """
+    在线程中运行 Playwright 操作，使用不同的事件循环策略
+
+    Windows上的 WindowsSelectorEventLoopPolicy 不支持子进程操作，
+    而 Playwright 需要创建浏览器子进程。所以在线程中运行 Playwright，
+    让线程使用 ProactorEventLoopPolicy 来支持子进程操作。
+    """
     if sys.platform == 'win32':
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        except Exception as e:
-            print(f"⚠️ 工作进程：设置事件循环策略失败: {e}")
+        # 在线程中设置 ProactorEventLoopPolicy，支持子进程
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+    # 在线程中创建新的事件循环
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        return loop.run_until_complete(task_func(*args, **kwargs))
+    finally:
+        loop.close()
 
 
 class TestExecutor:
@@ -770,15 +783,19 @@ if __name__ == "__main__":
             action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
             action_codes.append(f"                    pass")
 
-        # 使用异步 Playwright 直接运行，避免子进程问题
+        # 使用线程池运行 Playwright，允许使用不同的事件循环策略
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
-        from app.services.computer_use.computer_use_service import ComputerUseService
-        from playwright.async_api import async_playwright
-        import time
-
         action_codes_from_playwright = []
-        try:
+
+        # 定义在线程中执行的异步函数
+        async def run_playwright_operations():
+            from app.services.computer_use.computer_use_service import ComputerUseService
+            from playwright.async_api import async_playwright
+            import time
+
+            local_action_codes = []
+
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=browser_headless)
                 page = await browser.new_page()
@@ -900,11 +917,19 @@ if __name__ == "__main__":
                             # 执行操作以便进行下一步截图分析
                             await self._execute_action_async(page, action_result)
 
-                    action_codes_from_playwright.extend(code_lines)
+                    local_action_codes.extend(code_lines)
 
                 await browser.close()
                 print(f"   Playwright 任务处理完成")
 
+            return local_action_codes
+
+        # 在线程中运行 Playwright
+        try:
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_playwright_in_thread, run_playwright_operations)
+                action_codes_from_playwright = future.result(timeout=300)
         except Exception as e:
             print(f"   ❌ Playwright 处理错误: {e}")
             import traceback

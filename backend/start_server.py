@@ -23,7 +23,7 @@ if __name__ == "__main__":
         "app.main:app",
         host="0.0.0.0",
         port=8000,
-        reload=False,  # 不要使用 reload，避免事件循环策略被重置
+        reload=True,  # 使用 reload 模式，方便开发调试
         access_log=True,
         log_level="debug",
         use_colors=True
