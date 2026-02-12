@@ -11,6 +11,12 @@ from typing import List, Dict, Any
 from app.core.config import settings
 from app.services.computer_use.computer_use_service import SyncComputerUseService
 
+# 在模块级别设置 WindowsSelectorEventLoopPolicy 以支持 Playwright
+try:
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+except Exception as e:
+    print(f"   [子进程] ⚠️ 设置事件循环策略失败: {e}")
+
 
 def detect_and_handle_captcha(page, api_key, base_url, vl_model):
     """
@@ -49,12 +55,6 @@ def process_playwright_task(task_data):
     Returns:
         生成的代码列表
     """
-    # 在子进程中设置 WindowsSelectorEventLoopPolicy 以支持 Playwright
-    try:
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        print("   [子进程] ✅ 设置 WindowsSelectorEventLoopPolicy")
-    except Exception as e:
-        print(f"   [子进程] ⚠️ 设置事件循环策略失败: {e}")
     try:
         target_url = task_data.get('target_url')
         actions = task_data.get('actions', [])
