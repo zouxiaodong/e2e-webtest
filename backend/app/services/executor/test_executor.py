@@ -3,6 +3,7 @@ import io
 import re
 import sys
 import os
+import concurrent.futures
 from typing import Dict, Any, Optional, List
 from contextlib import redirect_stdout
 from datetime import datetime
@@ -17,6 +18,15 @@ from ..llm.bailian_client import bailian_client
 from ..computer_use.computer_use_service import computer_use_service
 
 load_dotenv()
+
+
+def _init_worker_process():
+    """初始化工作进程 - 设置Windows事件循环策略"""
+    if sys.platform == 'win32':
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except Exception as e:
+            print(f"⚠️ 工作进程：设置事件循环策略失败: {e}")
 
 
 class TestExecutor:
@@ -760,26 +770,149 @@ if __name__ == "__main__":
             action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
             action_codes.append(f"                    pass")
 
-        # 使用单独的进程运行 Playwright，完全隔离 asyncio 循环
+        # 使用异步 Playwright 直接运行，避免子进程问题
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
-        import concurrent.futures
+        from app.services.computer_use.computer_use_service import ComputerUseService
+        from playwright.async_api import async_playwright
+        import time
 
-        # 在单独的进程中运行
-        from .playwright_processor import process_playwright_task
-        task_data = {
-            'target_url': target_url,
-            'actions': actions,
-            'browser_headless': browser_headless,
-            'auto_detect_captcha': auto_detect_captcha,
-            'load_saved_storage': load_saved_storage
-        }
-        with concurrent.futures.ProcessPoolExecutor() as executor:
-            future = executor.submit(process_playwright_task, task_data)
-            collected_codes = future.result()
+        action_codes_from_playwright = []
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=browser_headless)
+                page = await browser.new_page()
+
+                # 导航到目标页面
+                print(f"   正在导航到: {target_url}")
+                await page.goto(target_url)
+                await page.wait_for_load_state("networkidle")
+                await page.wait_for_timeout(2000)
+
+                # 如果需要加载保存的storage
+                if load_saved_storage:
+                    print("   正在加载保存的 cookies 和 storage...")
+                    from app.utils.browser_util import get_browser_util
+                    browser_util = get_browser_util()
+
+                    session_storage_path = os.getenv('SESSION_STORAGE_PATH', os.getcwd())
+                    await browser_util.load_storage(
+                        page,
+                        cookies_path=os.path.join(session_storage_path, 'saved_cookies.json'),
+                        localstorage_path=os.path.join(session_storage_path, 'saved_localstorage.json'),
+                        sessionstorage_path=os.path.join(session_storage_path, 'saved_sessionstorage.json')
+                    )
+
+                    print("   正在刷新页面使登录状态生效...")
+                    await page.reload(wait_until="domcontentloaded")
+                    await page.wait_for_timeout(5000)
+                    print("   ✅ 页面刷新完成")
+
+                computer_use_service = ComputerUseService()
+
+                # 处理每个操作
+                for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
+                    is_last = i == len(actions) - 1
+
+                    # 如果启用了自动验证码检测，跳过验证码相关的操作
+                    if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
+                        print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
+                        continue
+
+                    # 判断是否是验证/断言类型的操作
+                    is_verification = any(keyword in action.lower() for keyword in [
+                        '验证', '断言', 'assert', '检查', '确认', '存在', '显示', '展示',
+                        'verify', 'check', 'validate', 'confirm', 'visible', 'exist'
+                    ])
+
+                    code_lines = []
+                    step_type = "verify" if is_verification else "action"
+
+                    if is_verification:
+                        print(f"   操作 {i} 是验证类型，使用VLLM进行截图分析: {action}")
+
+                        # 生成验证代码
+                        action_escaped = repr(action)
+                        code_lines.append(f"                # Action {i}: {action}")
+                        code_lines.append(f"                log_step_start({i}, {action_escaped}, 'verify')")
+                        code_lines.append(f"                try:")
+                        code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
+                        code_lines.append(f"                    browser_util = get_browser_util()")
+                        code_lines.append(f"                    await browser_util.assert_by_screenshot(")
+                        code_lines.append(f"                        page,")
+                        code_lines.append(f"                        verification_description={action_escaped},")
+                        code_lines.append(f"                        action_name='Action {i}'")
+                        code_lines.append(f"                    )")
+                        code_lines.append(f"                    log_step_end({i}, 'passed')")
+                        code_lines.append(f"                except Exception as e:")
+                        code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                        code_lines.append(f"                    raise")
+                    else:
+                        # 如果启用了自动验证码检测
+                        if auto_detect_captcha:
+                            from app.utils.browser_util import get_browser_util
+                            browser_util = get_browser_util()
+                            await browser_util.detect_and_solve_captcha(page)
+                            await page.wait_for_timeout(1000)
+
+                        print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
+
+                        # 使用异步版本的 Computer-Use 服务
+                        action_result = await computer_use_service.analyze_page_and_generate_action(
+                            page=page,
+                            action_description=action
+                        )
+
+                        if not action_result.get("element_found"):
+                            print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
+                            action_escaped = repr(action)
+                            code_lines.append(f"                # Action {i}: {action}")
+                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
+                            code_lines.append(f"                try:")
+                            code_lines.append(f"                    await page.wait_for_timeout(2000)")
+                            code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
+                            code_lines.append(f"                    print(json.dumps({{'event': 'screenshot_saved', 'step': {i}, 'path': f'action_{i}_screenshot.png'}}, ensure_ascii=False))")
+                            code_lines.append(f"                    log_step_end({i}, 'skipped')")
+                        else:
+                            # 生成代码
+                            from app.services.computer_use.computer_use_service import SyncComputerUseService
+                            sync_service = SyncComputerUseService()
+                            action_code = sync_service.generate_playwright_code_from_coordinates(
+                                action=action_result.get("action", "click"),
+                                coordinates=action_result.get("coordinates", {}),
+                                text_to_fill=action_result.get("text_to_fill"),
+                                is_last=is_last
+                            )
+
+                            print(f"   生成的代码:\n{action_code}")
+
+                            action_escaped = repr(action)
+                            code_lines.append(f"                # Action {i}: {action}")
+                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
+                            code_lines.append(f"                try:")
+                            for line in action_code.strip().split('\n'):
+                                code_lines.append(f"                    {line}")
+                            code_lines.append(f"                    log_step_end({i}, 'passed')")
+                            code_lines.append(f"                except Exception as e:")
+                            code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                            code_lines.append(f"                    raise")
+
+                            # 执行操作以便进行下一步截图分析
+                            await self._execute_action_async(page, action_result)
+
+                    action_codes_from_playwright.extend(code_lines)
+
+                await browser.close()
+                print(f"   Playwright 任务处理完成")
+
+        except Exception as e:
+            print(f"   ❌ Playwright 处理错误: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
 
         # 将收集的代码添加到 action_codes
-        action_codes.extend(collected_codes)
+        action_codes.extend(action_codes_from_playwright)
 
         actions_str = "\n".join(action_codes)
 
@@ -927,6 +1060,32 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v", "-s"])
 '''
         return script
+
+    async def _execute_action_async(self, page, action_result):
+        """异步执行页面操作"""
+        try:
+            action_type = action_result.get("action", "click")
+            coordinates = action_result.get("coordinates", {})
+            text_to_fill = action_result.get("text_to_fill")
+
+            x = coordinates.get("x", 0)
+            y = coordinates.get("y", 0)
+
+            if action_type == "click":
+                await page.click(f"button, a, [role='button']", force=True)
+            elif action_type == "fill" and text_to_fill:
+                # 尝试找到输入框并填充
+                inputs = await page.query_selector_all("input, textarea")
+                if inputs:
+                    await inputs[0].fill(text_to_fill)
+            elif action_type == "scroll":
+                await page.evaluate(f"window.scrollBy({x}, {y})")
+            elif action_type == "wait":
+                await page.wait_for_timeout(2000)
+
+        except Exception as e:
+            print(f"   执行操作时出错: {e}")
+            # 不中断流程，继续处理下一个操作
 
     async def _execute_test(self, script: str) -> str:
         """

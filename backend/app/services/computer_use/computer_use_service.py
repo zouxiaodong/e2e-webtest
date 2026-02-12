@@ -290,6 +290,16 @@ class SyncComputerUseService:
 
     def __enter__(self):
         """上下文管理器入口"""
+        import sys
+        import asyncio
+
+        # 在Windows上设置事件循环策略以支持Playwright子进程
+        if sys.platform == 'win32':
+            try:
+                asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+            except Exception as e:
+                print(f"⚠️ 设置事件循环策略失败: {e}")
+
         from playwright.sync_api import sync_playwright
         self.p = sync_playwright().start()
         return self
