@@ -5,6 +5,7 @@ Playwright 处理器 - 在单独进程中处理 Playwright 任务
 import os
 import json
 import time
+import asyncio
 from typing import List, Dict, Any
 
 from app.core.config import settings
@@ -48,6 +49,12 @@ def process_playwright_task(task_data):
     Returns:
         生成的代码列表
     """
+    # 在子进程中设置 WindowsSelectorEventLoopPolicy 以支持 Playwright
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        print("   [子进程] ✅ 设置 WindowsSelectorEventLoopPolicy")
+    except Exception as e:
+        print(f"   [子进程] ⚠️ 设置事件循环策略失败: {e}")
     try:
         target_url = task_data.get('target_url')
         actions = task_data.get('actions', [])
