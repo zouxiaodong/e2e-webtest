@@ -261,12 +261,14 @@ class ComputerUseService:
         elif action == "fill":
             code_lines.append(f"# 在坐标 ({x}, {y}) 填充文本")
             code_lines.append(f"await page.mouse.click({x}, {y})")
+            code_lines.append("await page.wait_for_timeout(500)  # 等待输入框获得焦点")
             code_lines.append("await page.keyboard.press('Control+a')")
             code_lines.append("await page.keyboard.press('Delete')")
+            code_lines.append("await page.wait_for_timeout(200)")
             if text_to_fill:
                 escaped_text = text_to_fill.replace("'", "\\'")
-                code_lines.append(f"await page.keyboard.type('{escaped_text}')")
-            code_lines.append("await page.wait_for_timeout(2000)")
+                code_lines.append(f"await page.keyboard.type('{escaped_text}', delay=50)")
+            code_lines.append("await page.wait_for_timeout(1000)")
 
         elif action == "scroll":
             code_lines.append(f"# 在坐标 ({x}, {y}) 滚动")
@@ -539,12 +541,14 @@ class SyncComputerUseService:
         elif action == "fill":
             code_lines.append(f"# 在坐标 ({x}, {y}) 填充文本")
             code_lines.append(f"await page.mouse.click({x}, {y})")
+            code_lines.append("await page.wait_for_timeout(500)  # 等待输入框获得焦点")
             code_lines.append("await page.keyboard.press('Control+a')")
             code_lines.append("await page.keyboard.press('Delete')")
+            code_lines.append("await page.wait_for_timeout(200)")
             if text_to_fill:
                 escaped_text = text_to_fill.replace("'", "\\'")
-                code_lines.append(f"await page.keyboard.type('{escaped_text}')")
-            code_lines.append("await page.wait_for_timeout(2000)")
+                code_lines.append(f"await page.keyboard.type('{escaped_text}', delay=50)")
+            code_lines.append("await page.wait_for_timeout(1000)")
 
         elif action == "scroll":
             code_lines.append(f"# 在坐标 ({x}, {y}) 滚动")

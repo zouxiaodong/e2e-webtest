@@ -57,6 +57,138 @@ class TestGenerator:
 
         return cleaned_html.strip()
 
+    def extract_form_selectors(self, html: str) -> Dict[str, str]:
+        """
+        从清理后的HTML中提取表单元素的CSS选择器
+        Args:
+            html: HTML内容（可以是原始或清理后的）
+        Returns:
+            字典，key为描述性名称，value为CSS选择器
+            例如: {"username_input": "input#username", "password_input": "input[name='password']"}
+        """
+        selectors = {}
+        if not html:
+            return selectors
+
+        try:
+            doc = lxml.html.fromstring(html)
+        except Exception:
+            return selectors
+
+        # 提取 input 元素
+        for elem in doc.iter('input'):
+            input_type = (elem.get('type') or 'text').lower()
+            # 跳过 hidden、submit、button、checkbox、radio 等非文本输入
+            if input_type in ('hidden', 'submit', 'button', 'image', 'reset', 'file'):
+                continue
+
+            elem_id = elem.get('id', '')
+            elem_name = elem.get('name', '')
+            elem_placeholder = elem.get('placeholder', '')
+            elem_class = elem.get('class', '')
+
+            # 跳过动态生成的 ID（Element Plus: el-id-XXXX-XX, Ant Design: rc_xxx 等）
+            is_dynamic_id = bool(elem_id and re.match(r'^(el-id-|rc[_-]|__)', elem_id))
+
+            # 构建最佳CSS选择器（优先级: 稳定#id > [name=...] > [placeholder=...] > [type=...]）
+            if elem_id and not is_dynamic_id:
+                css_selector = f"input#{elem_id}"
+            elif elem_name:
+                css_selector = f"input[name='{elem_name}']"
+            elif elem_placeholder:
+                css_selector = f"input[placeholder='{elem_placeholder}']"
+            elif input_type == 'password':
+                css_selector = "input[type='password']"
+            else:
+                continue  # 无法生成唯一选择器，跳过
+
+            # 生成描述性名称
+            desc_name = self._classify_input_field(elem_id, elem_name, elem_placeholder, input_type, elem_class)
+            if desc_name:
+                selectors[desc_name] = css_selector
+
+        # 提取 select 元素
+        for elem in doc.iter('select'):
+            elem_id = elem.get('id', '')
+            elem_name = elem.get('name', '')
+
+            if elem_id:
+                css_selector = f"select#{elem_id}"
+            elif elem_name:
+                css_selector = f"select[name='{elem_name}']"
+            else:
+                continue
+
+            desc_name = elem_name or elem_id or 'select_field'
+            selectors[desc_name] = css_selector
+
+        # 提取 button 元素
+        for elem in doc.iter('button'):
+            elem_id = elem.get('id', '')
+            elem_class = elem.get('class', '')
+            elem_type = (elem.get('type') or '').lower()
+            elem_text = (elem.text_content() or '').strip()
+
+            if elem_id:
+                css_selector = f"button#{elem_id}"
+            elif elem_class and 'login' in elem_class.lower():
+                css_selector = f"button.{elem_class.split()[0]}"
+            elif elem_text:
+                # 使用文本内容作为描述
+                css_selector = f"button:has-text('{elem_text[:20]}')"
+            else:
+                continue
+
+            # 分类按钮
+            text_lower = elem_text.lower()
+            class_lower = elem_class.lower()
+            if any(k in text_lower or k in class_lower for k in ['登录', 'login', 'signin', 'sign in', '登 录']):
+                selectors['login_button'] = css_selector
+            elif any(k in text_lower or k in class_lower for k in ['提交', 'submit']):
+                selectors['submit_button'] = css_selector
+            elif any(k in text_lower or k in class_lower for k in ['注册', 'register', 'signup']):
+                selectors['register_button'] = css_selector
+            else:
+                btn_name = f"button_{elem_text[:10]}" if elem_text else f"button_{elem_id or 'unknown'}"
+                selectors[btn_name] = css_selector
+
+        # 提取 input[type=submit] 按钮
+        for elem in doc.iter('input'):
+            if (elem.get('type') or '').lower() == 'submit':
+                elem_id = elem.get('id', '')
+                elem_value = elem.get('value', '')
+                if elem_id:
+                    selectors['submit_button'] = f"input#{elem_id}"
+                elif elem_value:
+                    selectors['submit_button'] = f"input[value='{elem_value}']"
+
+        return selectors
+
+    @staticmethod
+    def _classify_input_field(elem_id: str, elem_name: str, elem_placeholder: str, input_type: str, elem_class: str) -> Optional[str]:
+        """根据属性分类输入框，返回描述性名称"""
+        # 合并所有文本用于关键词匹配
+        all_text = f"{elem_id} {elem_name} {elem_placeholder} {elem_class}".lower()
+
+        if input_type == 'password' or 'password' in all_text or '密码' in all_text:
+            return 'password_input'
+        if any(k in all_text for k in ['username', 'user_name', 'userid', 'user_id', '用户名', 'loginname', 'login_name', 'account']):
+            return 'username_input'
+        if input_type == 'email' or 'email' in all_text or '邮箱' in all_text:
+            return 'email_input'
+        if any(k in all_text for k in ['captcha', 'verify_code', 'verifycode', 'vcode', 'yzm', '验证码']):
+            return 'captcha_input'
+        if any(k in all_text for k in ['phone', 'mobile', 'tel', '手机', '电话']):
+            return 'phone_input'
+        if input_type == 'search' or 'search' in all_text or '搜索' in all_text:
+            return 'search_input'
+        # 通用名称
+        if elem_name:
+            return f"input_{elem_name}"
+        if elem_id:
+            return f"input_{elem_id}"
+        return None
+
     async def get_page_content(self, target_url: str, load_saved_storage: bool = True) -> Dict[str, Any]:
             """
             使用 Playwright 打开页面并获取内容
@@ -757,7 +889,8 @@ class TestGenerator:
         action: str,
         dom_state: str,
         previous_actions: str,
-        is_last_action: bool = False
+        is_last_action: bool = False,
+        form_selectors: Dict[str, str] = None
     ) -> str:
         """
         为指定操作生成Playwright代码
@@ -766,12 +899,29 @@ class TestGenerator:
             dom_state: 网页DOM状态
             previous_actions: 之前的操作
             is_last_action: 是否为最后一个操作
+            form_selectors: 从DOM提取的表单选择器字典
         Returns:
             生成的Playwright代码
         """
         system_prompt = """你是一个端到端测试专家。你的目标是为用户指定的操作编写Python Playwright代码。"""
 
         last_action_assertion = "使用playwright expect来验证此操作是否成功。" if is_last_action else ""
+
+        # 构建表单选择器提示
+        form_selectors_hint = ""
+        if form_selectors:
+            selector_lines = []
+            for name, selector in form_selectors.items():
+                selector_lines.append(f"  - {name}: {selector}")
+            form_selectors_hint = f"""
+**已从页面DOM中提取到以下表单元素的精确CSS选择器，请务必使用这些选择器：**
+{chr(10).join(selector_lines)}
+
+请直接使用上述选择器定位表单元素，例如：
+- 填写用户名: `await page.fill("{form_selectors.get('username_input', 'input#username')}", "value")`
+- 填写密码: `await page.fill("{form_selectors.get('password_input', 'input[type=password]')}", "value")`
+- 点击登录按钮: `await page.locator("{form_selectors.get('login_button', 'button.login-button')}").first.click()`
+"""
 
         prompt = f"""你将获得一个网站<DOM>、<Previous Actions>（不要在输出中包含此代码）和<Action>，你需要为<Action>编写Python Playwright代码。
 这个<Action>代码将被插入到现有的Playwright脚本中。因此代码应该是原子性的。
@@ -783,7 +933,7 @@ class TestGenerator:
 如果元素中不存在data-testid属性，请使用不同的选择器。
 你的输出应该只是一个满足操作的原子Python Playwright代码。
 不要将代码包含在反引号或任何Markdown格式中；只输出Python代码本身！
-
+{form_selectors_hint}
 重要提示：
 1. 在每次操作（如点击、输入）后添加延迟，使用 `await page.wait_for_timeout(2000)` 模拟人工操作（2秒延迟）
 2. 在填写表单字段后，必须添加 `await page.wait_for_timeout(2000)` 再执行下一个操作

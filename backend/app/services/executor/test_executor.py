@@ -49,6 +49,74 @@ class TestExecutor:
         self.dom_state: str = ""
         self.aggregated_actions: str = ""
 
+    async def _read_captcha_config_from_db(self) -> Dict[str, Any]:
+        """
+        从数据库读取验证码相关配置（CAPTCHA_SELECTOR, CAPTCHA_INPUT_SELECTOR）
+        Returns:
+            {"captcha_selector": str or None, "captcha_input_selector": str or None}
+        """
+        from ...core.database import get_db
+        from ...models.global_config import GlobalConfig, ConfigKeys
+        from sqlalchemy import select
+
+        captcha_selector = None
+        captcha_input_selector = None
+
+        async for db in get_db():
+            # 读取 CAPTCHA_SELECTOR
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.CAPTCHA_SELECTOR)
+            )
+            config = result.scalar_one_or_none()
+            if config and config.config_value:
+                captcha_selector = config.config_value.strip()
+
+            # 读取 CAPTCHA_INPUT_SELECTOR
+            result = await db.execute(
+                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.CAPTCHA_INPUT_SELECTOR)
+            )
+            config = result.scalar_one_or_none()
+            if config and config.config_value:
+                captcha_input_selector = config.config_value.strip()
+
+            break
+
+        print(f"[CaptchaConfig] captcha_selector={captcha_selector}, captcha_input_selector={captcha_input_selector}")
+        return {
+            "captcha_selector": captcha_selector,
+            "captcha_input_selector": captcha_input_selector
+        }
+
+    async def _detect_captcha_from_page(self, page_content: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        使用VL模型检测页面截图中是否有验证码，并读取DB配置的选择器
+        Returns:
+            {"has_captcha": bool, "captcha_type": str, "captcha_description": str,
+             "captcha_selector": str or None, "captcha_input_selector": str or None}
+        """
+        from ..captcha.captcha_service import captcha_service
+
+        # 提取截图base64
+        screenshot_data = page_content.get('screenshot', '')
+        if screenshot_data.startswith('data:image'):
+            screenshot_base64 = screenshot_data.split(',')[1] if ',' in screenshot_data else screenshot_data
+        else:
+            screenshot_base64 = screenshot_data
+
+        # VL检测验证码
+        vl_result = await captcha_service.detect_captcha_from_screenshot(screenshot_base64)
+
+        # 读取DB配置
+        db_config = await self._read_captcha_config_from_db()
+
+        return {
+            "has_captcha": vl_result.get("has_captcha", False),
+            "captcha_type": vl_result.get("captcha_type", "none"),
+            "captcha_description": vl_result.get("captcha_description", ""),
+            "captcha_selector": db_config.get("captcha_selector"),
+            "captcha_input_selector": db_config.get("captcha_input_selector")
+        }
+
     def _is_captcha_recognition_action(self, action: str) -> bool:
         """检测是否为验证码截图/VL模型识别动作"""
         a = action.lower()
@@ -112,6 +180,22 @@ class TestExecutor:
             page_analysis = await test_generator.analyze_page_content(page_content, user_query)
             print(f"✅ 页面类型: {page_analysis.get('page_type', 'N/A')}")
 
+            # 步骤2.5: VL验证码检测 + 读取DB配置选择器
+            print("\n步骤2.5: VL验证码检测...")
+            captcha_info = await self._detect_captcha_from_page(page_content)
+            print(f"✅ 验证码检测结果: has_captcha={captcha_info['has_captcha']}, type={captcha_info['captcha_type']}")
+            if captcha_info['captcha_selector']:
+                print(f"   DB配置 captcha_selector: {captcha_info['captcha_selector']}")
+            if captcha_info['captcha_input_selector']:
+                print(f"   DB配置 captcha_input_selector: {captcha_info['captcha_input_selector']}")
+
+            # 步骤2.6: 提取表单选择器
+            print("\n步骤2.6: 提取表单选择器...")
+            form_selectors = test_generator.extract_form_selectors(page_content.get('html', ''))
+            print(f"✅ 提取到 {len(form_selectors)} 个表单选择器")
+            for name, selector in form_selectors.items():
+                print(f"   {name}: {selector}")
+
             # 步骤3: 基于页面分析生成操作步骤
             print("\n步骤3: 生成操作步骤...")
             actions = await self._generate_actions_with_context(
@@ -123,7 +207,8 @@ class TestExecutor:
             # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
             print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage, page_content.get('html', '')
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage,
+                page_content.get('html', ''), captcha_info=captcha_info, form_selectors=form_selectors
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -192,6 +277,16 @@ class TestExecutor:
             print(f"✅ 发现 {len(page_analysis.get('forms', []))} 个表单")
             print(f"✅ 发现 {len(page_analysis.get('buttons', []))} 个按钮")
 
+            # 步骤2.5: VL验证码检测 + 读取DB配置选择器
+            print("\n步骤2.5: VL验证码检测...")
+            captcha_info = await self._detect_captcha_from_page(page_content)
+            print(f"✅ 验证码检测结果: has_captcha={captcha_info['has_captcha']}, type={captcha_info['captcha_type']}")
+
+            # 步骤2.6: 提取表单选择器
+            print("\n步骤2.6: 提取表单选择器...")
+            form_selectors = test_generator.extract_form_selectors(page_content.get('html', ''))
+            print(f"✅ 提取到 {len(form_selectors)} 个表单选择器")
+
             # 步骤3: 基于页面分析生成操作步骤
             print("\n步骤3: 生成操作步骤...")
             actions = await self._generate_actions_with_context(
@@ -205,7 +300,8 @@ class TestExecutor:
             # 步骤4: 生成完整脚本（使用页面HTML作为上下文）
             print("\n步骤4: 生成完整测试脚本...")
             final_script = await self._generate_complete_script(
-                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, page_content.get('html', '')
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage,
+                html_content=page_content.get('html', ''), captcha_info=captcha_info, form_selectors=form_selectors
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -338,7 +434,9 @@ class TestExecutor:
         auto_detect_captcha: bool,
         auto_cookie_localstorage: bool = True,
         load_saved_storage: bool = True,
-        html_content: str = ""
+        html_content: str = "",
+        captcha_info: Dict[str, Any] = None,
+        form_selectors: Dict[str, str] = None
     ) -> str:
         """
         生成完整的测试脚本（一次性生成所有操作）
@@ -346,6 +444,13 @@ class TestExecutor:
             target_url: 目标URL
             actions: 操作步骤列表
             auto_detect_captcha: 是否自动检测验证码
+            auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
+            load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
+            html_content: 页面HTML内容
+            captcha_info: VL验证码检测结果 + DB配置选择器
+            form_selectors: 从DOM提取的表单选择器
+        Returns:
+            完整的测试脚本
             auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
             load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
         Returns:
@@ -425,21 +530,30 @@ class TestExecutor:
             action_codes.append("                    print('SessionStorage 已加载')")
 
         # 如果需要自动检测验证码，检测是否有验证码相关操作，预先注入 sys.path 设置代码
-        # 注意：不再使用 VL 模型内联块，而是让每个 action 独立生成代码，
-        # 验证码动作会自动使用 browser_util.detect_and_solve_captcha 处理
-        captcha_handler_code = ""
+        # 使用VL检测结果（captcha_info）来决定是否注入验证码处理代码
+        if captcha_info is None:
+            captcha_info = {}
+        if form_selectors is None:
+            form_selectors = {}
+
+        vl_has_captcha = captcha_info.get("has_captcha", False)
+        cfg_captcha_selector = captcha_info.get("captcha_selector")
+        cfg_captcha_input_selector = captcha_info.get("captcha_input_selector")
 
         # 为每个操作生成代码
         # 使用获取到的HTML内容作为DOM状态
         dom_state = html_content[:5000] if html_content else ""  # 限制长度避免超出token限制
         aggregated_actions = ""
 
-        # 检测是否有验证码相关操作，如有则预先注入 sys.path 设置代码
+        # 决定是否需要验证码处理：VL检测到验证码 OR LLM生成了验证码步骤 OR auto_detect_captcha
         has_captcha_actions = any(
             self._is_captcha_recognition_action(a) or self._is_captcha_fill_action(a)
             for a in actions[1:]
         )
-        if has_captcha_actions or auto_detect_captcha:
+        need_captcha_handling = vl_has_captcha or has_captcha_actions or auto_detect_captcha
+
+        if need_captcha_handling:
+            print(f"   [验证码] 需要验证码处理: VL检测={vl_has_captcha}, LLM步骤={has_captcha_actions}, auto={auto_detect_captcha}")
             action_codes.append("                # 设置Python搜索路径以使用browser_util（读取PYTHON_PATH环境变量）")
             action_codes.append("                import sys as _sys, os as _os")
             action_codes.append("                try:")
@@ -454,25 +568,34 @@ class TestExecutor:
 
         captcha_injected = False  # 跟踪验证码处理是否已注入
 
+        # 构建传给 detect_and_solve_captcha 的选择器参数字符串
+        captcha_sel_repr = repr(cfg_captcha_selector) if cfg_captcha_selector else "None"
+        captcha_input_sel_repr = repr(cfg_captcha_input_selector) if cfg_captcha_input_selector else "None"
+
+        def _inject_captcha_code(action_codes_list, action_idx, action_desc, is_auto=False):
+            """注入 detect_and_solve_captcha 代码块"""
+            prefix = "[自动验证码处理] " if is_auto else ""
+            action_codes_list.append(f"                # {prefix}Action {action_idx}: {action_desc}")
+            action_codes_list.append(f"                print('[TEST] Action {action_idx} started: captcha handling')")
+            action_codes_list.append(f"                try:")
+            action_codes_list.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
+            action_codes_list.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, captcha_selector={captcha_sel_repr}, captcha_input_selector={captcha_input_sel_repr})")
+            action_codes_list.append(f"                    print('[TEST] 验证码已自动识别并填写')")
+            action_codes_list.append(f"                except ImportError:")
+            action_codes_list.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
+            action_codes_list.append(f"                except Exception as _e:")
+            fatal_str = "（非致命）" if is_auto else ""
+            action_codes_list.append(f"                    print(f'[TEST] 验证码处理失败{fatal_str}: {{_e}}')")
+            action_codes_list.append(f"                await asyncio.sleep(3)")
+            action_codes_list.append(f"                print('[TEST] Action {action_idx} completed: captcha handling')")
+
         for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
             is_last = i == len(actions) - 1
 
             # 验证码截图/VL模型识别动作：注入 browser_util.detect_and_solve_captcha 代码
             if self._is_captcha_recognition_action(action):
                 print(f"   [验证码] 操作 {i} 为验证码识别，注入browser_util代码: {action}")
-                action_codes.append(f"                # Action {i}: {action}")
-                action_codes.append(f"                print('[TEST] Action {i} started')")
-                action_codes.append(f"                try:")
-                action_codes.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
-                action_codes.append(f"                    _captcha_sel = _os.getenv('CAPTCHA_SELECTOR', '') or None")
-                action_codes.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, _captcha_sel)")
-                action_codes.append(f"                    print('[TEST] 验证码已自动识别并填写')")
-                action_codes.append(f"                except ImportError:")
-                action_codes.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
-                action_codes.append(f"                except Exception as _e:")
-                action_codes.append(f"                    print(f'[TEST] 验证码处理失败: {{_e}}')")
-                action_codes.append(f"                await asyncio.sleep(3)")
-                action_codes.append(f"                print('[TEST] Action {i} completed')")
+                _inject_captcha_code(action_codes, i, action)
                 aggregated_actions += f"\n# browser_util.detect_and_solve_captcha(page) 已处理验证码"
                 captcha_injected = True
                 continue
@@ -484,55 +607,33 @@ class TestExecutor:
                 action_codes.append(f"                print('[TEST] Action {i} skipped: captcha fill already handled')")
                 continue
 
-            # auto_detect_captcha 模式下：检测可能的验证码相关操作（宽松匹配）
-            if auto_detect_captcha and any(k in action.lower() for k in ['验证码', 'captcha']):
+            # 验证码相关操作（宽松匹配）
+            if need_captcha_handling and any(k in action.lower() for k in ['验证码', 'captcha']):
                 print(f"   [验证码] 操作 {i} 可能与验证码相关，注入 detect_and_solve_captcha: {action}")
-                action_codes.append(f"                # Action {i}: {action}")
-                action_codes.append(f"                print('[TEST] Action {i} started')")
-                action_codes.append(f"                try:")
-                action_codes.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
-                action_codes.append(f"                    _captcha_sel = _os.getenv('CAPTCHA_SELECTOR', '') or None")
-                action_codes.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, _captcha_sel)")
-                action_codes.append(f"                    print('[TEST] 验证码已自动识别并填写')")
-                action_codes.append(f"                except ImportError:")
-                action_codes.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
-                action_codes.append(f"                except Exception as _e:")
-                action_codes.append(f"                    print(f'[TEST] 验证码处理失败: {{_e}}')")
-                action_codes.append(f"                await asyncio.sleep(3)")
-                action_codes.append(f"                print('[TEST] Action {i} completed')")
+                _inject_captcha_code(action_codes, i, action)
                 aggregated_actions += f"\n# browser_util.detect_and_solve_captcha(page) 已处理验证码"
                 captcha_injected = True
                 continue
 
-            # auto_detect_captcha 模式下：在登录/提交按钮点击之前自动注入验证码处理
-            # （当 LLM 没有生成明确的验证码步骤时）
+            # 在登录/提交按钮点击之前自动注入验证码处理
+            # 条件：(VL检测到验证码 OR auto_detect_captcha) AND 是登录操作 AND 尚未注入
             is_login_action = any(k in action.lower() for k in [
                 '登录', '登入', 'login', 'sign in', 'signin', '提交', 'submit', '确认登录'
             ]) and any(k in action.lower() for k in ['点击', 'click', '按钮', 'button', '提交'])
-            if auto_detect_captcha and is_login_action and not captcha_injected:
+            if need_captcha_handling and is_login_action and not captcha_injected:
                 print(f"   [验证码] 操作 {i} 为登录按钮，在点击前自动注入 detect_and_solve_captcha")
-                action_codes.append(f"                # [自动验证码处理] 在登录前自动检测并填写验证码")
-                action_codes.append(f"                print('[TEST] Auto captcha detection before login')")
-                action_codes.append(f"                try:")
-                action_codes.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
-                action_codes.append(f"                    _captcha_sel = _os.getenv('CAPTCHA_SELECTOR', '') or None")
-                action_codes.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, _captcha_sel)")
-                action_codes.append(f"                    print('[TEST] 验证码已自动识别并填写')")
-                action_codes.append(f"                except ImportError:")
-                action_codes.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
-                action_codes.append(f"                except Exception as _e:")
-                action_codes.append(f"                    print(f'[TEST] 验证码处理失败（非致命）: {{_e}}')")
-                action_codes.append(f"                await asyncio.sleep(2)")
+                _inject_captcha_code(action_codes, i, "在登录前自动检测并填写验证码", is_auto=True)
                 captcha_injected = True
 
             print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
-            # 生成代码
+            # 生成代码（传入表单选择器帮助LLM生成更准确的代码）
             action_code = await test_generator.generate_playwright_code(
                 action,
                 dom_state,
                 aggregated_actions,
-                is_last
+                is_last,
+                form_selectors=form_selectors
             )
 
             # 验证代码
@@ -703,6 +804,18 @@ if __name__ == "__main__":
             page_analysis = await test_generator.analyze_page_content(page_content, user_query)
             print(f"✅ 页面类型: {page_analysis.get('page_type', 'N/A')}")
 
+            # 步骤2.5: VL验证码检测 + 读取DB配置选择器
+            print("\n步骤2.5: VL验证码检测...")
+            captcha_info = await self._detect_captcha_from_page(page_content)
+            print(f"✅ 验证码检测结果: has_captcha={captcha_info['has_captcha']}, type={captcha_info['captcha_type']}")
+
+            # 步骤2.6: 提取表单选择器
+            print("\n步骤2.6: 提取表单选择器...")
+            form_selectors = test_generator.extract_form_selectors(page_content.get('html', ''))
+            print(f"✅ 提取到 {len(form_selectors)} 个表单选择器")
+            for name, selector in form_selectors.items():
+                print(f"   {name}: {selector}")
+
             # 步骤3: 基于页面分析生成操作步骤
             print("\n步骤3: 生成操作步骤...")
             actions = await self._generate_actions_with_context(
@@ -714,7 +827,8 @@ if __name__ == "__main__":
             # 步骤4: 使用 Computer-Use 方案生成脚本
             print("\n步骤4: 使用 Computer-Use 方案生成完整测试脚本...")
             final_script = await self._generate_computer_use_script(
-                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage
+                target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage,
+                captcha_info=captcha_info, form_selectors=form_selectors
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -743,7 +857,9 @@ if __name__ == "__main__":
         actions: list,
         auto_detect_captcha: bool = False,
         auto_cookie_localstorage: bool = True,
-        load_saved_storage: bool = True
+        load_saved_storage: bool = True,
+        captcha_info: Dict[str, Any] = None,
+        form_selectors: Dict[str, str] = None
     ) -> str:
         """
         使用 Computer-Use 方案生成测试脚本
@@ -753,6 +869,8 @@ if __name__ == "__main__":
             auto_detect_captcha: 是否自动检测验证码
             auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
             load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
+            captcha_info: VL验证码检测结果 + DB配置选择器
+            form_selectors: 从DOM提取的表单选择器
         Returns:
             完整的测试脚本
         """
@@ -810,6 +928,13 @@ if __name__ == "__main__":
             local_action_codes = []
             aggregated_actions = ""  # 跟踪已生成的操作，用于 LLM 上下文
             captcha_injected = False  # 跟踪验证码处理是否已注入
+
+            # 从captcha_info获取配置选择器
+            _captcha_info = captcha_info or {}
+            vl_has_captcha = _captcha_info.get("has_captcha", False)
+            cfg_captcha_sel = repr(_captcha_info.get("captcha_selector")) if _captcha_info.get("captcha_selector") else "None"
+            cfg_captcha_input_sel = repr(_captcha_info.get("captcha_input_selector")) if _captcha_info.get("captcha_input_selector") else "None"
+            need_captcha = vl_has_captcha or auto_detect_captcha
 
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=browser_headless)
@@ -875,7 +1000,7 @@ if __name__ == "__main__":
                         code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                         code_lines.append(f"                    raise")
                     else:
-                        # 验证码截图/VL模型识别动作：始终使用 detect_and_solve_captcha（无论 auto_detect_captcha 设置）
+                        # 验证码截图/VL模型识别动作：始终使用 detect_and_solve_captcha
                         if self._is_captcha_recognition_action(action):
                             print(f"   [验证码] 操作 {i} 为验证码识别，注入 detect_and_solve_captcha: {action}")
                             action_escaped = repr(action)
@@ -883,7 +1008,7 @@ if __name__ == "__main__":
                             code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
                             code_lines.append(f"                try:")
                             code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
-                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page)")
+                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page, captcha_selector={cfg_captcha_sel}, captcha_input_selector={cfg_captcha_input_sel})")
                             code_lines.append(f"                    log_step_end({i}, 'passed')")
                             code_lines.append(f"                except Exception as e:")
                             code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
@@ -896,18 +1021,35 @@ if __name__ == "__main__":
                             local_action_codes.append(f"                # Action {i}: {action} (已由验证码识别步骤自动处理，跳过)")
                             continue
 
-                        # auto_detect_captcha 模式下：在登录/提交按钮点击之前自动注入验证码处理
+                        # 验证码相关操作（宽松匹配）
+                        if need_captcha and any(k in action.lower() for k in ['验证码', 'captcha']):
+                            print(f"   [验证码] 操作 {i} 可能与验证码相关，注入 detect_and_solve_captcha: {action}")
+                            action_escaped = repr(action)
+                            code_lines.append(f"                # Action {i}: {action}")
+                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
+                            code_lines.append(f"                try:")
+                            code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
+                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page, captcha_selector={cfg_captcha_sel}, captcha_input_selector={cfg_captcha_input_sel})")
+                            code_lines.append(f"                    log_step_end({i}, 'passed')")
+                            code_lines.append(f"                except Exception as e:")
+                            code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                            code_lines.append(f"                    raise")
+                            local_action_codes.extend(code_lines)
+                            captcha_injected = True
+                            continue
+
+                        # 在登录/提交按钮点击之前自动注入验证码处理
                         is_login_action = any(k in action.lower() for k in [
                             '登录', '登入', 'login', 'sign in', 'signin', '提交', 'submit', '确认登录'
                         ]) and any(k in action.lower() for k in ['点击', 'click', '按钮', 'button', '提交'])
-                        if auto_detect_captcha and is_login_action and not captcha_injected:
+                        if need_captcha and is_login_action and not captcha_injected:
                             print(f"   [验证码] 操作 {i} 为登录按钮，在点击前自动注入 detect_and_solve_captcha")
                             action_escaped_cap = repr(action)
                             code_lines.append(f"                # [自动验证码处理] 在登录前自动检测并填写验证码")
                             code_lines.append(f"                log_step_start({i}, '自动检测验证码', 'action')")
                             code_lines.append(f"                try:")
                             code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
-                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page)")
+                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page, captcha_selector={cfg_captcha_sel}, captcha_input_selector={cfg_captcha_input_sel})")
                             code_lines.append(f"                    log_step_end({i}, 'passed')")
                             code_lines.append(f"                except Exception as e:")
                             code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
@@ -918,7 +1060,7 @@ if __name__ == "__main__":
 
                         print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
 
-                        # 使用异步版本的 Computer-Use 服务
+                        # 使用 Computer-Use 服务（基于截图+坐标定位，更通用）
                         action_result = await computer_use_service.analyze_page_and_generate_action(
                             page=page,
                             action_description=action
@@ -930,7 +1072,8 @@ if __name__ == "__main__":
                             print(f"   ⚠️ 操作 {i} Computer-Use未找到元素，回退到DOM选择器: {action_result.get('reasoning', '')}")
                             dom_state = (await page.content())[:5000]
                             action_code = await test_generator.generate_playwright_code(
-                                action, dom_state, aggregated_actions, is_last
+                                action, dom_state, aggregated_actions, is_last,
+                                form_selectors=(form_selectors or {})
                             )
                             code_lines.append(f"                # Action {i}: {action}")
                             code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")

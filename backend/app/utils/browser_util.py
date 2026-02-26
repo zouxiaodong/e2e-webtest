@@ -212,20 +212,22 @@ class BrowserUtil:
             print(f"[BrowserUtil] 查找元素出错: {e}")
             return False, None
 
-    async def detect_and_solve_captcha(self, page, captcha_selector: str = None) -> bool:
+    async def detect_and_solve_captcha(self, page, captcha_selector: str = None, captcha_input_selector: str = None) -> bool:
         """
         检测并自动识别填写验证码
 
         Args:
             page: Playwright page对象
-            captcha_selector: 验证码图片的选择器（可选）
+            captcha_selector: 验证码图片的选择器（从GlobalConfig读取，可选）
+            captcha_input_selector: 验证码输入框的选择器（从GlobalConfig读取，可选）
 
         Returns:
             是否成功处理验证码
         """
         try:
-            # 如果没有指定选择器，尝试常见选择器
-            selectors = [
+            # === 第一步：查找验证码图片 ===
+            # 优先级：1. 用户提供的config选择器 2. 硬编码CSS选择器 3. VL视觉定位
+            img_selectors = [
                 captcha_selector,
                 'img[id*="captcha"]',
                 'img[class*="captcha"]',
@@ -236,28 +238,103 @@ class BrowserUtil:
             ]
 
             captcha_img = None
-            for selector in selectors:
+            used_img_selector = None
+            for selector in img_selectors:
                 if not selector:
                     continue
                 try:
                     img = page.locator(selector).first
                     if await img.is_visible(timeout=1000):
                         captcha_img = img
+                        used_img_selector = selector
                         print(f'[BrowserUtil] 找到验证码图片: {selector}')
                         break
                 except:
                     continue
 
+            # VL视觉定位回退：如果CSS选择器都没找到，用VL模型定位
             if not captcha_img:
+                print('[BrowserUtil] CSS选择器未找到验证码图片，尝试VL视觉定位...')
+                try:
+                    found, element_info = await self.find_element_by_description(page, "验证码图片（CAPTCHA图片，通常包含数字或字母或数学运算）")
+                    if found and element_info:
+                        x, y = element_info['x'], element_info['y']
+                        print(f'[BrowserUtil] VL定位到验证码图片坐标: ({x}, {y})')
+                        # 使用坐标截取验证码区域 - 先对整个页面截图，再裁剪
+                        screenshot_bytes = await page.screenshot()
+                        from PIL import Image
+                        import io
+                        full_img = Image.open(io.BytesIO(screenshot_bytes))
+                        # 以坐标为中心裁剪一块区域（验证码通常不超过200x80）
+                        crop_w, crop_h = 200, 80
+                        left = max(0, x - crop_w // 2)
+                        top = max(0, y - crop_h // 2)
+                        right = min(full_img.width, x + crop_w // 2)
+                        bottom = min(full_img.height, y + crop_h // 2)
+                        captcha_crop = full_img.crop((left, top, right, bottom))
+                        buf = io.BytesIO()
+                        captcha_crop.save(buf, format='PNG')
+                        captcha_bytes_vl = buf.getvalue()
+                        captcha_base64 = base64.b64encode(captcha_bytes_vl).decode('utf-8')
+                        # 跳到识别步骤
+                        captcha_text = await self._recognize_captcha_text(captcha_base64)
+                        if captcha_text:
+                            # 找输入框并填写
+                            captcha_input = await self._find_captcha_input(page, captcha_input_selector)
+                            if captcha_input:
+                                await captcha_input.fill(captcha_text)
+                                print(f'[BrowserUtil] 验证码已填写(VL定位): {captcha_text}')
+                                return True
+                except Exception as vl_err:
+                    print(f'[BrowserUtil] VL视觉定位验证码失败: {vl_err}')
+
+            if not captcha_img:
+                print('[BrowserUtil] 未找到验证码图片')
                 return False
 
-            # 截图验证码
+            # === 第二步：截图并识别验证码 ===
             captcha_bytes = await captcha_img.screenshot()
             captcha_base64 = base64.b64encode(captcha_bytes).decode('utf-8')
+            captcha_text = await self._recognize_captcha_text(captcha_base64)
 
-            # 调用VLLM识别验证码
+            if not captcha_text:
+                print('[BrowserUtil] 验证码识别失败')
+                return False
+
+            # === 第三步：查找验证码输入框并填写 ===
+            captcha_input = await self._find_captcha_input(page, captcha_input_selector)
+
+            if captcha_input and await captcha_input.is_visible(timeout=1000):
+                await captcha_input.fill(captcha_text)
+                print(f'[BrowserUtil] 验证码已填写: {captcha_text}')
+                return True
+
+            # VL回退：用VL模型定位输入框
+            print('[BrowserUtil] CSS选择器未找到验证码输入框，尝试VL视觉定位...')
+            try:
+                found, element_info = await self.find_element_by_description(page, "验证码输入框（用于输入验证码的文本框）")
+                if found and element_info:
+                    x, y = element_info['x'], element_info['y']
+                    print(f'[BrowserUtil] VL定位到验证码输入框坐标: ({x}, {y})')
+                    await page.mouse.click(x, y)
+                    await page.wait_for_timeout(300)
+                    await page.keyboard.press("Control+a")
+                    await page.keyboard.type(captcha_text, delay=50)
+                    print(f'[BrowserUtil] 验证码已填写(VL定位输入框): {captcha_text}')
+                    return True
+            except Exception as vl_err:
+                print(f'[BrowserUtil] VL视觉定位输入框失败: {vl_err}')
+
+            return False
+
+        except Exception as e:
+            print(f'[BrowserUtil] 验证码处理失败: {e}')
+            return False
+
+    async def _recognize_captcha_text(self, captcha_base64: str) -> Optional[str]:
+        """识别验证码图片中的文本"""
+        try:
             client = OpenAI(api_key=self.api_key, base_url=self.base_url)
-
             response = client.chat.completions.create(
                 model=self.vl_model,
                 messages=[
@@ -279,59 +356,57 @@ class BrowserUtil:
 
             captcha_text_raw = response.choices[0].message.content.strip()
             print(f'[BrowserUtil] 识别到验证码(原始): {captcha_text_raw}')
-            
+
             # 提取数字：如果返回的是 "4*7=28" 或 "4+5=9" 之类的结果，只提取最后的数字
             captcha_text = captcha_text_raw
-            # 匹配数学运算结果，如 "4*7=28" -> 提取 28
             match = re.search(r'[=:]\s*(\d+)', captcha_text_raw)
             if match:
                 captcha_text = match.group(1)
-            # 如果只是纯数字，直接使用
             elif captcha_text_raw.isdigit():
                 captcha_text = captcha_text_raw
-            # 尝试提取所有数字中的最后几个连续数字
             else:
                 numbers = re.findall(r'\d+', captcha_text_raw)
                 if numbers:
-                    captcha_text = numbers[-1]  # 取最后一个数字序列
-            
+                    captcha_text = numbers[-1]
+
             print(f'[BrowserUtil] 提取后的验证码: {captcha_text}')
-
-            # 查找验证码输入框
-            input_selectors = [
-                'input[name*="captcha"]',
-                'input[id*="captcha"]',
-                'input[placeholder*="captcha"]',
-                'input[placeholder*="验证码"]',
-                'input[name*="code"]',
-                'input[name*="verify"]',
-                'input[type="text"][maxlength*="4"]',
-                'input[type="text"][maxlength*="5"]',
-                'input[type="text"][maxlength*="6"]'
-            ]
-
-            captcha_input = None
-            for selector in input_selectors:
-                try:
-                    elements = page.locator(selector)
-                    if await elements.count() > 0:
-                        captcha_input = elements.first
-                        if await captcha_input.is_visible(timeout=1000):
-                            print(f'[BrowserUtil] 找到验证码输入框: {selector}')
-                            break
-                except:
-                    continue
-
-            if captcha_input and await captcha_input.is_visible(timeout=1000):
-                await captcha_input.fill(captcha_text)
-                print('[BrowserUtil] 验证码已填写')
-                return True
-
-            return False
-
+            return captcha_text
         except Exception as e:
-            print(f'[BrowserUtil] 验证码处理失败: {e}')
-            return False
+            print(f'[BrowserUtil] 验证码识别失败: {e}')
+            return None
+
+    async def _find_captcha_input(self, page, captcha_input_selector: str = None):
+        """
+        查找验证码输入框
+        优先级：1. 用户提供的config选择器 2. 硬编码CSS选择器
+        """
+        # 构建选择器列表，config选择器优先
+        input_selectors = []
+        if captcha_input_selector:
+            input_selectors.append(captcha_input_selector)
+        input_selectors.extend([
+            'input[name*="captcha"]',
+            'input[id*="captcha"]',
+            'input[placeholder*="captcha"]',
+            'input[placeholder*="验证码"]',
+            'input[name*="code"]',
+            'input[name*="verify"]',
+            'input[type="text"][maxlength="4"]',
+            'input[type="text"][maxlength="5"]',
+            'input[type="text"][maxlength="6"]'
+        ])
+
+        for selector in input_selectors:
+            try:
+                elements = page.locator(selector)
+                if await elements.count() > 0:
+                    captcha_input = elements.first
+                    if await captcha_input.is_visible(timeout=1000):
+                        print(f'[BrowserUtil] 找到验证码输入框: {selector}')
+                        return captcha_input
+            except:
+                continue
+        return None
 
     async def load_storage(self, page, cookies_path: str = 'saved_cookies.json',
                           localstorage_path: str = 'saved_localstorage.json',

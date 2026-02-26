@@ -1,13 +1,72 @@
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, Any
 from playwright.async_api import Page, Locator
 import base64
 import re
+import json
 from ..llm.bailian_client import bailian_client
 from ...core.config import settings
 
 
 class CaptchaService:
     """验证码识别服务 - 自动识别验证码位置"""
+
+    @staticmethod
+    async def detect_captcha_from_screenshot(screenshot_base64: str) -> Dict[str, Any]:
+        """
+        使用 VL 模型分析页面截图，检测是否存在验证码
+        Args:
+            screenshot_base64: base64编码的页面截图
+        Returns:
+            {"has_captcha": bool, "captcha_description": str, "captcha_type": str}
+        """
+        system_prompt = """你是一个网页分析专家。分析提供的网页截图，判断页面中是否存在验证码（CAPTCHA）。"""
+
+        prompt = """请分析这张网页截图，判断页面中是否存在验证码。
+
+验证码类型包括但不限于：
+- 图片文字验证码（需要输入图片中的字符）
+- 数学运算验证码（如 2+3=?）
+- 滑动验证码
+- 点选验证码
+
+请以JSON格式返回分析结果：
+- "has_captcha": 是否存在验证码（true/false）
+- "captcha_description": 验证码的描述（如果存在）
+- "captcha_type": 验证码类型（"text", "math", "slider", "click", "none"）
+
+只输出JSON结果，不要添加任何解释。"""
+
+        try:
+            response = await bailian_client.generate_text_with_image(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                image_base64=screenshot_base64
+            )
+
+            # 清理响应
+            cleaned = response.strip()
+            if cleaned.startswith('```json'):
+                cleaned = cleaned[7:]
+            if cleaned.startswith('```'):
+                cleaned = cleaned[3:]
+            if cleaned.endswith('```'):
+                cleaned = cleaned[:-3]
+            cleaned = cleaned.strip()
+
+            result = json.loads(cleaned)
+            print(f"[CaptchaService] VL验证码检测结果: has_captcha={result.get('has_captcha')}, type={result.get('captcha_type')}")
+            return {
+                "has_captcha": result.get("has_captcha", False),
+                "captcha_description": result.get("captcha_description", ""),
+                "captcha_type": result.get("captcha_type", "none")
+            }
+        except Exception as e:
+            print(f"[CaptchaService] VL验证码检测失败: {e}")
+            return {
+                "has_captcha": False,
+                "captcha_description": "",
+                "captcha_type": "none"
+            }
 
     @staticmethod
     async def analyze_page_for_captcha(dom_content: str) -> Tuple[Optional[str], Optional[str]]:
