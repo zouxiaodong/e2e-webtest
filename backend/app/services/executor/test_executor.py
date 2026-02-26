@@ -844,6 +844,7 @@ if __name__ == "__main__":
             import time
 
             local_action_codes = []
+            aggregated_actions = ""  # 跟踪已生成的操作，用于 LLM 上下文
 
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=browser_headless)
@@ -880,11 +881,6 @@ if __name__ == "__main__":
                 for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
                     is_last = i == len(actions) - 1
 
-                    # 如果启用了自动验证码检测，跳过验证码相关的操作
-                    if auto_detect_captcha and any(keyword in action.lower() for keyword in ['验证码', 'captcha', '截图', 'screenshot']):
-                        print(f"   跳过操作 {i}: {action} (自动验证码检测已启用)")
-                        continue
-
                     # 判断是否是验证/断言类型的操作
                     is_verification = any(keyword in action.lower() for keyword in [
                         '验证', '断言', 'assert', '检查', '确认', '存在', '显示', '展示',
@@ -914,10 +910,9 @@ if __name__ == "__main__":
                         code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                         code_lines.append(f"                    raise")
                     else:
-                        # 如果是验证码相关动作且启用了自动检测，注入 detect_and_solve_captcha
-                        is_captcha_action = any(k in action.lower() for k in ['验证码', 'captcha', 'vl模型'])
-                        if auto_detect_captcha and is_captcha_action:
-                            print(f"   [验证码] 操作 {i} 为验证码动作，注入 detect_and_solve_captcha: {action}")
+                        # 验证码截图/VL模型识别动作：始终使用 detect_and_solve_captcha（无论 auto_detect_captcha 设置）
+                        if self._is_captcha_recognition_action(action):
+                            print(f"   [验证码] 操作 {i} 为验证码识别，注入 detect_and_solve_captcha: {action}")
                             action_escaped = repr(action)
                             code_lines.append(f"                # Action {i}: {action}")
                             code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
@@ -929,6 +924,12 @@ if __name__ == "__main__":
                             code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                             code_lines.append(f"                    raise")
                             local_action_codes.extend(code_lines)
+                            continue
+
+                        # 填写验证码识别结果动作：detect_and_solve_captcha 已包含此步骤，跳过
+                        if self._is_captcha_fill_action(action):
+                            print(f"   [验证码] 操作 {i} 为填写识别结果，已由detect_and_solve_captcha处理，跳过: {action}")
+                            local_action_codes.append(f"                # Action {i}: {action} (已由验证码识别步骤自动处理，跳过)")
                             continue
 
                         print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
@@ -1150,7 +1151,7 @@ if __name__ == "__main__":
         return script
 
     async def _execute_action_async(self, page, action_result):
-        """异步执行页面操作"""
+        """异步执行页面操作（使用坐标定位，用于生成期间推进页面状态）"""
         try:
             action_type = action_result.get("action", "click")
             coordinates = action_result.get("coordinates", {})
@@ -1160,12 +1161,16 @@ if __name__ == "__main__":
             y = coordinates.get("y", 0)
 
             if action_type == "click":
-                await page.click(f"button, a, [role='button']", force=True)
+                await page.mouse.click(x, y)
+                await page.wait_for_timeout(1000)
             elif action_type == "fill" and text_to_fill:
-                # 尝试找到输入框并填充
-                inputs = await page.query_selector_all("input, textarea")
-                if inputs:
-                    await inputs[0].fill(text_to_fill)
+                # 点击坐标位置激活输入框，然后填充
+                await page.mouse.click(x, y)
+                await page.wait_for_timeout(500)
+                # 清空后输入
+                await page.keyboard.press("Control+a")
+                await page.keyboard.type(text_to_fill, delay=50)
+                await page.wait_for_timeout(500)
             elif action_type == "scroll":
                 await page.evaluate(f"window.scrollBy({x}, {y})")
             elif action_type == "wait":

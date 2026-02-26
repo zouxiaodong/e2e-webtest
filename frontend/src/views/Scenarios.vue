@@ -558,12 +558,16 @@ const viewTestCaseScript = (testCase) => {
 const viewTestCaseReports = async (testCase) => {
   try {
     reportsDialogVisible.value = true
-    currentScenario.value = currentScenario.value
     currentTestCaseForReports.value = testCase
     reports.value = await testCasesApi.getReports(testCase.id)
-    activeReportTab.value = 'list'
     stepResults.value = []
     currentReport.value = null
+    // 自动加载最新报告的步骤详情
+    if (reports.value && reports.value.length > 0) {
+      await viewReportSteps(reports.value[0])
+    } else {
+      activeReportTab.value = 'list'
+    }
   } catch (error) {
     ElMessage.error('加载报告列表失败')
   }

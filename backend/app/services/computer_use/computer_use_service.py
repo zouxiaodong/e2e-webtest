@@ -16,9 +16,10 @@ class ComputerUseService:
     """Computer-Use 服务，使用截图 + 坐标定位"""
 
     def __init__(self):
-        self.vl_model = "qwen-vl-plus"  # 使用 VL 模型
-        self.api_key = os.getenv("DASHSCOPE_API_KEY", "")
-        self.base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        from ...core.config import settings
+        self.vl_model = settings.BAILIAN_VL_MODEL
+        self.api_key = settings.BAILIAN_API_KEY
+        self.base_url = settings.BAILIAN_BASE_URL
 
     async def analyze_page_and_generate_action(
         self,

@@ -448,6 +448,39 @@ async def execute_scenario_cases(
                 error_message=execution_result.get("error")
             )
             db.add(test_report)
+            await db.flush()  # 获取 test_report.id
+
+            # 保存步骤结果到 TestStepResult
+            step_results_data = execution_result.get("step_results", [])
+            if step_results_data:
+                from datetime import datetime
+                # 将 step_start/step_end 事件配对后写入数据库
+                step_starts = {s["step_number"]: s for s in step_results_data if s.get("event") == "step_start"}
+                step_ends = {s["step_number"]: s for s in step_results_data if s.get("event") == "step_end"}
+                for step_num, start_data in step_starts.items():
+                    end_data = step_ends.get(step_num, {})
+                    start_time = None
+                    end_time = None
+                    try:
+                        if start_data.get("start_time"):
+                            start_time = datetime.fromisoformat(start_data["start_time"])
+                        if end_data.get("end_time"):
+                            end_time = datetime.fromisoformat(end_data["end_time"])
+                    except Exception:
+                        pass
+                    step_record = TestStepResult(
+                        test_report_id=test_report.id,
+                        step_number=step_num,
+                        step_name=start_data.get("step_name", f"Step {step_num}"),
+                        step_type=start_data.get("step_type", "action"),
+                        status=end_data.get("status", start_data.get("status", "unknown")),
+                        start_time=start_time,
+                        end_time=end_time,
+                        execution_duration=end_data.get("execution_duration_ms"),
+                        output_data=end_data.get("output_data"),
+                        error_message=end_data.get("error_message"),
+                    )
+                    db.add(step_record)
 
             execution_results.append({
                 "test_case_id": test_case.id,
