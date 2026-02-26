@@ -396,6 +396,12 @@ async def execute_scenario_cases(
             # 优先使用已保存的脚本，但如果load_saved_storage为False，需要重新生成脚本
             if test_case.script and test_case.script.strip() and load_saved_storage:
                 print(f"   Using saved script for test case {test_case.id}")
+                # DEBUG: 检查已保存脚本是否包含验证码处理
+                has_captcha_handling = "detect_and_solve_captcha" in test_case.script
+                has_browser_util = "browser_util" in test_case.script
+                print(f"   [DEBUG] 脚本验证码处理: detect_and_solve_captcha={has_captcha_handling}, browser_util={has_browser_util}")
+                if not has_captcha_handling and scenario.use_captcha:
+                    print(f"   ⚠️ 场景启用了验证码但脚本中没有验证码处理代码，建议重新生成脚本")
                 execution_result = await test_executor.execute_saved_script(test_case.script)
             else:
                 if not load_saved_storage:
