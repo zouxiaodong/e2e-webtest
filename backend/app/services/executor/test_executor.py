@@ -49,6 +49,22 @@ class TestExecutor:
         self.dom_state: str = ""
         self.aggregated_actions: str = ""
 
+    def _is_captcha_recognition_action(self, action: str) -> bool:
+        """检测是否为验证码截图/VL模型识别动作"""
+        a = action.lower()
+        if 'vl模型' in a:
+            return True
+        if '验证码' in a and any(k in a for k in ['截取', '截图', '识别图片', '识别验证码']):
+            return True
+        if 'captcha' in a and any(k in a for k in ['screenshot', 'capture', 'recognize', 'vl']):
+            return True
+        return False
+
+    def _is_captcha_fill_action(self, action: str) -> bool:
+        """检测是否为填写验证码识别结果的动作（已由detect_and_solve_captcha处理，应跳过）"""
+        a = action.lower()
+        return '识别结果' in a
+
     async def generate_script_only(
         self,
         user_query: str,
@@ -498,8 +514,52 @@ class TestExecutor:
         if auto_detect_captcha:
             print(f"   自动验证码检测已启用，跳过所有表单操作")
         else:
+            # 检测是否有验证码相关操作，如有则预先注入 sys.path 设置代码
+            has_captcha_actions = any(
+                self._is_captcha_recognition_action(a) or self._is_captcha_fill_action(a)
+                for a in actions[1:]
+            )
+            if has_captcha_actions:
+                action_codes.append("                # 设置Python搜索路径以使用browser_util（读取PYTHON_PATH环境变量）")
+                action_codes.append("                import sys as _sys, os as _os")
+                action_codes.append("                try:")
+                action_codes.append("                    from dotenv import load_dotenv as _load_dotenv")
+                action_codes.append("                    _load_dotenv()")
+                action_codes.append("                except ImportError:")
+                action_codes.append("                    pass")
+                action_codes.append("                _python_path = _os.getenv('PYTHON_PATH', '')")
+                action_codes.append("                if _python_path and _python_path not in _sys.path:")
+                action_codes.append("                    _sys.path.insert(0, _python_path)")
+                action_codes.append("                    print(f'[TEST] sys.path已添加: {_python_path}')")
+
             for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
                 is_last = i == len(actions) - 1
+
+                # 验证码截图/VL模型识别动作：注入 browser_util.detect_and_solve_captcha 代码
+                if self._is_captcha_recognition_action(action):
+                    print(f"   [验证码] 操作 {i} 为验证码识别，注入browser_util代码: {action}")
+                    action_codes.append(f"                # Action {i}: {action}")
+                    action_codes.append(f"                print('[TEST] Action {i} started')")
+                    action_codes.append(f"                try:")
+                    action_codes.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
+                    action_codes.append(f"                    _captcha_sel = _os.getenv('CAPTCHA_SELECTOR', '') or None")
+                    action_codes.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, _captcha_sel)")
+                    action_codes.append(f"                    print('[TEST] 验证码已自动识别并填写')")
+                    action_codes.append(f"                except ImportError:")
+                    action_codes.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
+                    action_codes.append(f"                except Exception as _e:")
+                    action_codes.append(f"                    print(f'[TEST] 验证码处理失败: {{_e}}')")
+                    action_codes.append(f"                await asyncio.sleep(3)")
+                    action_codes.append(f"                print('[TEST] Action {i} completed')")
+                    aggregated_actions += f"\n# browser_util.detect_and_solve_captcha(page) 已处理验证码"
+                    continue
+
+                # 填写验证码识别结果动作：detect_and_solve_captcha 已包含此步骤，跳过
+                if self._is_captcha_fill_action(action):
+                    print(f"   [验证码] 操作 {i} 为填写识别结果，已由detect_and_solve_captcha处理，跳过: {action}")
+                    action_codes.append(f"                # Action {i}: {action} (已由验证码识别步骤自动处理，跳过)")
+                    action_codes.append(f"                print('[TEST] Action {i} skipped: captcha fill already handled')")
+                    continue
 
                 print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
@@ -772,17 +832,6 @@ if __name__ == "__main__":
             action_codes.append(f"                except Exception as e:")
             action_codes.append(f"                    print(f'加载 storage 失败: {{e}}')")
 
-        # 如果需要自动检测验证码，添加验证码处理代码
-        if auto_detect_captcha:
-            action_codes.append(f"                # 自动检测并处理验证码（使用 browser_util）")
-            action_codes.append(f"                try:")
-            action_codes.append(f"                    from app.utils.browser_util import get_browser_util")
-            action_codes.append(f"                    browser_util = get_browser_util()")
-            action_codes.append(f"                    await browser_util.detect_and_solve_captcha(page)")
-            action_codes.append(f"                except Exception as e:")
-            action_codes.append(f"                    print(f'验证码处理失败: {{e}}')")
-            action_codes.append(f"                    pass")
-
         # 使用线程池运行 Playwright，允许使用不同的事件循环策略
         print(f"\n   开始使用 Computer-Use 方案生成操作代码...")
 
@@ -865,12 +914,22 @@ if __name__ == "__main__":
                         code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                         code_lines.append(f"                    raise")
                     else:
-                        # 如果启用了自动验证码检测
-                        if auto_detect_captcha:
-                            from app.utils.browser_util import get_browser_util
-                            browser_util = get_browser_util()
-                            await browser_util.detect_and_solve_captcha(page)
-                            await page.wait_for_timeout(1000)
+                        # 如果是验证码相关动作且启用了自动检测，注入 detect_and_solve_captcha
+                        is_captcha_action = any(k in action.lower() for k in ['验证码', 'captcha', 'vl模型'])
+                        if auto_detect_captcha and is_captcha_action:
+                            print(f"   [验证码] 操作 {i} 为验证码动作，注入 detect_and_solve_captcha: {action}")
+                            action_escaped = repr(action)
+                            code_lines.append(f"                # Action {i}: {action}")
+                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
+                            code_lines.append(f"                try:")
+                            code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
+                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page)")
+                            code_lines.append(f"                    log_step_end({i}, 'passed')")
+                            code_lines.append(f"                except Exception as e:")
+                            code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                            code_lines.append(f"                    raise")
+                            local_action_codes.extend(code_lines)
+                            continue
 
                         print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
 
@@ -880,30 +939,14 @@ if __name__ == "__main__":
                             action_description=action
                         )
 
+                        action_escaped = repr(action)
                         if not action_result.get("element_found"):
-                            print(f"   ⚠️ 操作 {i} 未找到元素: {action_result.get('reasoning', '未知原因')}")
-                            action_escaped = repr(action)
-                            code_lines.append(f"                # Action {i}: {action}")
-                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
-                            code_lines.append(f"                try:")
-                            code_lines.append(f"                    await page.wait_for_timeout(2000)")
-                            code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
-                            code_lines.append(f"                    print(json.dumps({{'event': 'screenshot_saved', 'step': {i}, 'path': f'action_{i}_screenshot.png'}}, ensure_ascii=False))")
-                            code_lines.append(f"                    log_step_end({i}, 'skipped')")
-                        else:
-                            # 生成代码
-                            from app.services.computer_use.computer_use_service import SyncComputerUseService
-                            sync_service = SyncComputerUseService()
-                            action_code = sync_service.generate_playwright_code_from_coordinates(
-                                action=action_result.get("action", "click"),
-                                coordinates=action_result.get("coordinates", {}),
-                                text_to_fill=action_result.get("text_to_fill"),
-                                is_last=is_last
+                            # Computer-Use 未找到元素，回退到 DOM 选择器模式
+                            print(f"   ⚠️ 操作 {i} Computer-Use未找到元素，回退到DOM选择器: {action_result.get('reasoning', '')}")
+                            dom_state = (await page.content())[:5000]
+                            action_code = await test_generator.generate_playwright_code(
+                                action, dom_state, aggregated_actions, is_last
                             )
-
-                            print(f"   生成的代码:\n{action_code}")
-
-                            action_escaped = repr(action)
                             code_lines.append(f"                # Action {i}: {action}")
                             code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
                             code_lines.append(f"                try:")
@@ -913,9 +956,29 @@ if __name__ == "__main__":
                             code_lines.append(f"                except Exception as e:")
                             code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                             code_lines.append(f"                    raise")
-
-                            # 执行操作以便进行下一步截图分析
+                        else:
+                            # Computer-Use 找到元素，使用坐标生成代码
+                            from app.services.computer_use.computer_use_service import SyncComputerUseService
+                            sync_service = SyncComputerUseService()
+                            action_code = sync_service.generate_playwright_code_from_coordinates(
+                                action=action_result.get("action", "click"),
+                                coordinates=action_result.get("coordinates", {}),
+                                text_to_fill=action_result.get("text_to_fill"),
+                                is_last=is_last
+                            )
+                            print(f"   生成的坐标代码:\n{action_code}")
+                            code_lines.append(f"                # Action {i}: {action}")
+                            code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")
+                            code_lines.append(f"                try:")
+                            for line in action_code.strip().split('\n'):
+                                code_lines.append(f"                    {line}")
+                            code_lines.append(f"                    log_step_end({i}, 'passed')")
+                            code_lines.append(f"                except Exception as e:")
+                            code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                            code_lines.append(f"                    raise")
                             await self._execute_action_async(page, action_result)
+
+                        aggregated_actions += f"\n# Action {i}: {action}"
 
                     local_action_codes.extend(code_lines)
 
@@ -1124,9 +1187,12 @@ if __name__ == "__main__":
         import os
         import subprocess
 
+        # 使用 backend/app/temp/ 目录保存临时脚本，方便排查问题
+        temp_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+
         # 创建临时脚本文件
-        # 使用 utf-8-sig 编码（带 BOM）以确保 Windows 正确识别
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8-sig') as f:
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8-sig', dir=temp_dir) as f:
             f.write(script)
             temp_script_path = f.name
 

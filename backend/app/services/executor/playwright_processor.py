@@ -170,6 +170,9 @@ def process_playwright_task(task_data):
                         code_lines.append(f"                    await page.screenshot(path=f'action_{i}_screenshot.png')")
                         code_lines.append(f"                    print(json.dumps({{'event': 'screenshot_saved', 'step': {i}, 'path': f'action_{i}_screenshot.png'}}, ensure_ascii=False))")
                         code_lines.append(f"                    log_step_end({i}, 'skipped')")
+                        code_lines.append(f"                except Exception as e:")
+                        code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                        code_lines.append(f"                    raise")
                     else:
                         # 生成代码，使用 action_result 中的 text_to_fill
                         action_code = sync_computer_use_service.generate_playwright_code_from_coordinates(

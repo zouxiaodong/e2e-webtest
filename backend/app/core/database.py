@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, text
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, text, event
 from datetime import datetime
 from .config import settings
 
@@ -15,11 +15,22 @@ Base = BaseModel
 # 导入所有模型以确保它们被注册到 Base.metadata
 from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResult
 
+# 检测数据库类型
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+
 # 创建异步数据库引擎
+engine_kwargs = {
+    "echo": settings.DEBUG,
+    "future": True
+}
+
+# SQLite 需要特殊处理
+if is_sqlite:
+    engine_kwargs["connect_args"] = {"check_same_thread": False}
+
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    future=True
+    **engine_kwargs
 )
 
 # 创建异步会话工厂
@@ -44,20 +55,20 @@ async def get_db() -> AsyncSession:
 async def init_db():
     """初始化数据库（创建数据表）"""
     print("=" * 50)
-    print("正在初始化数据表...")
+    print("Initializing database tables...")
     print("=" * 50)
 
     try:
         # 创建数据表
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
-            print("✅ 数据表创建完成")
+            print("[OK] Database tables created")
 
         print("=" * 50)
-        print("✅ 数据表初始化完成！")
+        print("[OK] Database initialization complete!")
         print("=" * 50)
     except Exception as e:
         print("=" * 50)
-        print(f"❌ 数据表初始化失败: {e}")
+        print(f"[ERROR] Database initialization failed: {e}")
         print("=" * 50)
         raise

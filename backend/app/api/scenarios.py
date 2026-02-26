@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload, raiseload
 from typing import List, Optional
 
 from ..core.database import get_db
-from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResult
+from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResult, TestCaseType
 from ..models.global_config import GlobalConfig, ConfigKeys
 from ..schemas.test_case import (
     TestScenarioCreate,
@@ -284,11 +284,20 @@ async def generate_scenario_cases(
                 actions=actions,
                 script=script,  # Save generated script
                 priority=case_data.get("priority", "P1"),
-                case_type=case_data.get("case_type", "positive"),
-                status="generated"  # Generated but not executed
+                status="generated"
             )
+
+            # Convert case_type string to enum (post-creation)
+            case_type_str = case_data.get("case_type", "positive").upper()
+            try:
+                db_case.case_type = TestCaseType[case_type_str]
+            except KeyError:
+                db_case.case_type = TestCaseType.POSITIVE
+
             db.add(db_case)
             generated_cases.append(db_case)
+
+
 
         # 提交所有测试用例
         await db.commit()

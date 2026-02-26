@@ -18,7 +18,7 @@ from app.api import test_cases, scenarios, configs
 
 # 配置日志
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[logging.StreamHandler(sys.stdout)]
 )
@@ -30,16 +30,20 @@ uvicorn_logger.setLevel(logging.INFO)
 uvicorn_access_logger = logging.getLogger("uvicorn.access")
 uvicorn_access_logger.setLevel(logging.INFO)
 
-# 配置 OpenAI 和相关库的日志级别为 DEBUG，查看详细请求和响应
-logging.getLogger("openai").setLevel(logging.DEBUG)
-logging.getLogger("httpx").setLevel(logging.DEBUG)
-logging.getLogger("httpcore").setLevel(logging.DEBUG)
+# 抑制数据库驱动的 DEBUG 噪音
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
+# OpenAI 相关库日志（需要排查LLM问题时改为 DEBUG）
+logging.getLogger("openai").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 # Windows 特定：使用 WindowsSelectorEventLoopPolicy 以支持 Playwright 子进程
 if sys.platform == 'win32':
-    print("🔄 设置 WindowsSelectorEventLoopPolicy 以支持 Playwright")
+    print("[INFO] Setting WindowsSelectorEventLoopPolicy for Playwright support")
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-    print(f"✅ 当前事件循环策略: {asyncio.get_event_loop_policy().__class__.__name__}")
+    print(f"[INFO] Current event loop policy: {asyncio.get_event_loop_policy().__class__.__name__}")
 
 
 @asynccontextmanager
@@ -47,25 +51,25 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时输出当前配置
     print("=" * 60)
-    print("📋 当前配置 (Settings)")
+    print("[CONFIG] Current Settings")
     print("=" * 60)
-    print(f"应用名称: {settings.APP_NAME}")
-    print(f"应用版本: {settings.APP_VERSION}")
-    print(f"调试模式: {settings.DEBUG}")
-    print(f"百练 LLM 模型: {settings.BAILIAN_LLM_MODEL}")
-    print(f"百练 VL 模型: {settings.BAILIAN_VL_MODEL}")
-    print(f"数据库: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"数据库: {settings.DATABASE_URL}")
-    print(f"CORS 允许源: {settings.CORS_ORIGINS}")
-    print(f"浏览器无头模式（默认）: {settings.BROWSER_HEADLESS}")
-    print(f"浏览器超时（默认）: {settings.BROWSER_TIMEOUT}ms")
+    print(f"App Name: {settings.APP_NAME}")
+    print(f"App Version: {settings.APP_VERSION}")
+    print(f"Debug: {settings.DEBUG}")
+    print(f"LLM Model: {settings.BAILIAN_LLM_MODEL}")
+    print(f"VL Model: {settings.BAILIAN_VL_MODEL}")
+    print(f"Database: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"Database: {settings.DATABASE_URL}")
+    print(f"CORS: {settings.CORS_ORIGINS}")
+    print(f"Browser Headless: {settings.BROWSER_HEADLESS}")
+    print(f"Browser Timeout: {settings.BROWSER_TIMEOUT}ms")
     print("=" * 60)
 
-    # 初始化数据库
-    print("正在初始化数据库...")
+    # Initialize database
+    print("Initializing database...")
     await init_db()
-    print("数据库初始化完成")
+    print("Database initialization complete")
 
-    # 输出数据库中的实际配置
+    # Output actual config from database
     from .models.global_config import GlobalConfig, ConfigKeys
     from sqlalchemy import select
     from .core.database import get_db
@@ -75,31 +79,29 @@ async def lifespan(app: FastAPI):
         config_dict = {c.config_key: c.config_value for c in configs}
 
         print("=" * 60)
-        print("📋 数据库中的实际配置")
+        print("[CONFIG] Database Settings")
         print("=" * 60)
-        print(f"目标URL: {config_dict.get(ConfigKeys.TARGET_URL, '未设置')}")
-        print(f"默认用户名: {config_dict.get(ConfigKeys.DEFAULT_USERNAME, '未设置')}")
-        print(f"浏览器无头模式: {config_dict.get(ConfigKeys.BROWSER_HEADLESS, 'true')} ({'关闭' if config_dict.get(ConfigKeys.BROWSER_HEADLESS) == 'false' else '开启'})")
-        print(f"浏览器超时: {config_dict.get(ConfigKeys.BROWSER_TIMEOUT, '30000')}ms")
+        print(f"Target URL: {config_dict.get(ConfigKeys.TARGET_URL, 'Not set')}")
+        print(f"Default Username: {config_dict.get(ConfigKeys.DEFAULT_USERNAME, 'Not set')}")
+        print(f"Browser Headless: {config_dict.get(ConfigKeys.BROWSER_HEADLESS, 'true')}")
+        print(f"Browser Timeout: {config_dict.get(ConfigKeys.BROWSER_TIMEOUT, '30000')}ms")
         print("=" * 60)
         break
 
     yield
-    # 关闭时的清理工作
-    print("应用关闭")
+    # Cleanup on shutdown
+    print("Application shutdown")
 
 
-# 创建FastAPI应用
+# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="AI驱动的端到端测试平台 - 支持场景与用例管理",
+    description="AI E2E Testing Platform - Scenario and Test Case Management",
     lifespan=lifespan
 )
 
-# 配置CORS（开发环境：允许所有）
-# 注意：由于前端使用 vite 代理，理论上不需要 CORS 配置
-# 但为了保险起见，保留简单的允许所有配置
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -108,21 +110,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 添加请求日志中间件
+# Request logging middleware
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """记录所有HTTP请求"""
-    print(f"📥 [REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
-    logger.info(f"📥 [REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
+    """Log all HTTP requests"""
+    print(f"[REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
+    logger.info(f"[REQUEST] {request.method} {request.url.path} - Client: {request.client.host}")
     
     try:
         response = await call_next(request)
-        print(f"📤 [RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
-        logger.info(f"📤 [RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
+        print(f"[RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
+        logger.info(f"[RESPONSE] {request.method} {request.url.path} - Status: {response.status_code}")
         return response
     except Exception as e:
-        print(f"❌ [ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
-        logger.error(f"❌ [ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
+        print(f"[ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
+        logger.error(f"[ERROR] {request.method} {request.url.path} - {type(e).__name__}: {str(e)}")
         import traceback
         traceback.print_exc()
         raise
@@ -174,20 +176,20 @@ async def global_exception_handler(request: Request, exc: Exception):
 if __name__ == "__main__":
     import uvicorn
     print("=" * 60)
-    print("🚀 Starting FastAPI server...")
+    print("[STARTING] FastAPI server...")
     print("=" * 60)
     print("=" * 60)
-    print("📋 当前配置 (Settings)")
+    print("[CONFIG] Current Settings")
     print("=" * 60)
-    print(f"应用名称: {settings.APP_NAME}")
-    print(f"应用版本: {settings.APP_VERSION}")
-    print(f"调试模式: {settings.DEBUG}")
-    print(f"百练 LLM 模型: {settings.BAILIAN_LLM_MODEL}")
-    print(f"百练 VL 模型: {settings.BAILIAN_VL_MODEL}")
-    print(f"数据库: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"数据库: {settings.DATABASE_URL}")
-    print(f"CORS 允许源: {settings.CORS_ORIGINS}")
-    print(f"浏览器无头模式: {settings.BROWSER_HEADLESS}")
-    print(f"浏览器超时: {settings.BROWSER_TIMEOUT}ms")
+    print(f"App Name: {settings.APP_NAME}")
+    print(f"App Version: {settings.APP_VERSION}")
+    print(f"Debug Mode: {settings.DEBUG}")
+    print(f"LLM Model: {settings.BAILIAN_LLM_MODEL}")
+    print(f"VL Model: {settings.BAILIAN_VL_MODEL}")
+    print(f"Database: {settings.DATABASE_URL[:20]}..." if len(settings.DATABASE_URL) > 20 else f"Database: {settings.DATABASE_URL}")
+    print(f"CORS Origins: {settings.CORS_ORIGINS}")
+    print(f"Browser Headless: {settings.BROWSER_HEADLESS}")
+    print(f"Browser Timeout: {settings.BROWSER_TIMEOUT}ms")
     print("=" * 60)
     uvicorn.run(
         "app.main:app",
@@ -195,6 +197,6 @@ if __name__ == "__main__":
         port=8000,
         reload=False,  # 禁用 reload 以避免日志问题
         access_log=True,
-        log_level="debug",
+        log_level="info",
         use_colors=True
     )

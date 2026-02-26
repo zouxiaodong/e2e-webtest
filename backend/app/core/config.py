@@ -4,13 +4,13 @@ import os
 
 class Settings(BaseSettings):
     # 百练平台配置
-    BAILIAN_API_KEY: str
-    BAILIAN_BASE_URL: str
+    BAILIAN_API_KEY: str = "sk-dummy"
+    BAILIAN_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     BAILIAN_LLM_MODEL: str = "qwen-plus"
     BAILIAN_VL_MODEL: str = "qwen-vl-plus"
 
     # 数据库配置
-    DATABASE_URL: str
+    DATABASE_URL: str = "sqlite+aiosqlite:///./e2etest.db"
 
     # 应用配置
     APP_NAME: str = "AI-Driven E2E Testing Platform"

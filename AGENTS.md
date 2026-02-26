@@ -1,127 +1,149 @@
-# E2E Testing Agent 项目说明
+# AGENTS.md - AI E2E Testing Platform
 
-## 项目概述
+AI-driven E2E testing platform using LLM (Bailian/Qwen) to generate Playwright test cases from natural language.
 
-这是一个智能 E2E（端到端）测试代理项目，使用自然语言指令自动化生成和执行 Web 应用的端到端测试。该项目基于 LangGraph 实现工作流编排，结合 Playwright 进行浏览器自动化，使用 LLM（Azure OpenAI）将用户测试需求转换为可执行的测试脚本。
+## Tech Stack
 
-### 核心技术栈
+- **Backend**: FastAPI 0.115, SQLAlchemy 2.0 (async), MySQL, Python 3.11+
+- **Frontend**: Vue 3, Element Plus, Vite
+- **Testing**: Playwright, pytest
+- **LLM**: Bailian (Qwen-plus for text, Qwen-vl-plus for vision)
 
-- **LangGraph** - 基于 LangChain 的图工作流编排框架，用于管理测试生成的多步骤流程
-- **Playwright** - Python 版本的浏览器自动化工具，用于执行 E2E 测试
-- **LangChain** - LLM 应用开发框架，用于与 Azure OpenAI 模型交互
-- **Azure OpenAI** - 提供大语言模型能力，用于解析指令、生成代码和断言
-- **Flask** - 提供测试用的示例 Web 应用
-- **pytest-playwright** - Playwright 的 pytest 插件，用于测试执行
-- **ipytest** - 在 Jupyter Notebook 中运行 pytest
+## Build, Run & Test Commands
 
-### 项目架构
-
-项目采用 LangGraph 工作流模式，通过多个节点协调完成测试生成：
-
-1. **指令解析节点** - 将用户的自然语言测试需求转换为结构化的原子操作列表
-2. **初始化节点** - 生成初始的 Playwright 脚本框架，包含页面导航
-3. **状态获取节点** - 执行当前脚本并获取网页 DOM 状态
-4. **代码生成节点** - 基于当前 DOM 状态和操作描述生成 Playwright 代码
-5. **代码验证节点** - 验证生成的代码语法和完整性
-6. **后处理节点** - 将完整的 Playwright 代码包装为 pytest 测试函数
-7. **测试执行节点** - 使用 pytest 执行生成的测试
-8. **报告生成节点** - 生成测试结果报告
-
-## 构建和运行
-
-### 环境要求
-
-- Python 3.11+
-- Azure OpenAI 账户和 API 密钥
-- `.env` 文件配置 Azure OpenAI 相关环境变量
-
-### 安装依赖
-
+### Backend
 ```bash
-pip install langchain==0.2.16 langchain-community==0.2.16 langchain-core==0.2.38 langchain-experimental==0.0.65 langchain-openai==0.1.23 langchain-text-splitters==0.2.4 langgraph==0.2.18 langgraph-checkpoint==1.0.9 python-dotenv==1.0.1 openai==1.43.0 Flask==3.0.3 pytest-playwright==0.5.2 ipytest==0.14.2 nest-asyncio==1.6.0
+cd backend
+pip install -r requirements.txt
+playwright install chromium
+# Create database: CREATE DATABASE e2etest CHARACTER SET utf8mb4;
+python -m app.main          # API: http://localhost:8000/docs
+# OR python start_server.py
 ```
 
-### 运行项目
+### Frontend
+```bash
+cd frontend && npm install
+npm run dev     # http://localhost:5174
+npm run build   # Production build
+```
 
-项目以 Jupyter Notebook 形式提供，主要执行流程：
+### Running Tests
+```bash
+cd backend
+pytest                          # Run all tests
+pytest test_api.py              # Run specific file
+pytest -k "test_name"           # Run by keyword
+pytest test_api.py::test_name -v # Run single test function
+pytest -v                       # Verbose output
+pytest --playwright             # Playwright tests
+python test_api.py              # Run standalone async scripts
+```
 
-1. 启动 Flask 测试应用（作为测试目标）：
+## Code Style Guidelines
+
+### Python (Backend)
+
+**Imports**: stdlib → third-party → local
 ```python
-import subprocess
-process = subprocess.Popen(
-    ["flask", "run"],
-    env={"FLASK_APP": "../data/e2e_testing_agent_app.py", "FLASK_ENV": "development", **os.environ}
-)
+import asyncio, sys, os, logging
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, update, delete
+from app.core.database import get_db
+from app.models.test_case import TestCase
+from app.schemas.test_case import TestCaseResponse
 ```
 
-2. 运行工作流生成并执行测试：
+**Naming**: Classes=PascalCase, Functions/vars=snake_case, Constants=UPPER_SNAKE_CASE, Tables=snake_case plural
+
+**Types**: Use `Optional[X]` (not `X | None`) and `List[X]` (not `list[X]`) for compatibility
+
+**Async/Await**: All DB/I/O must be async. Use `AsyncSession`. Windows requires:
 ```python
-query = "Test a registration form that contains username, password and password confirmation fields. After submitting it, verify that registration was successful."
-target_url = "http://localhost:5000"
-result = await run_workflow(query, target_url)
+import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 ```
 
-3. 查看测试报告：
+**Error Handling**: Use HTTPException, proper status codes, log errors before raising
+
 ```python
-print(result["report"])
+try:
+    result = await db.execute(select(TestCase).where(TestCase.id == test_case_id))
+    test_case = result.scalar_one_or_none()
+    if not test_case:
+        raise HTTPException(status_code=404, detail="测试用例不存在")
+except Exception as e:
+    logger.error(f"Error: {str(e)}")
+    raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 ```
 
-4. 测试完成后终止 Flask 进程：
+**SQLAlchemy Models**:
 ```python
-process.kill()
+class TestCase(Base):
+    __tablename__ = "test_cases"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False, comment="用例名称")
+    status = Column(String(50), default="draft", comment="状态")
 ```
 
-### Windows 系统注意事项
+**FastAPI Routes**:
+```python
+router = APIRouter(prefix="/api/test-cases", tags=["测试用例"])
 
-在 Windows 上的 Jupyter Notebook 中运行 Playwright 需要特殊处理。参考：https://github.com/microsoft/playwright-python/issues/178#issuecomment-1302869947
+@router.get("/", response_model=List[TestCaseResponse])
+async def list_test_cases(db: AsyncSession = Depends(get_db)):
+    ...
+```
 
-## 开发约定
+### Frontend (Vue 3)
+- Use Composition API with `<script setup>`
+- Use Element Plus components
+- Use Pinia for state management
 
-### 代码结构
+## Project Structure
+```
+backend/
+├── app/
+│   ├── api/           # FastAPI routes
+│   ├── core/          # config.py, database.py
+│   ├── models/        # SQLAlchemy models
+│   ├── schemas/       # Pydantic schemas
+│   └── services/      # llm/, generator/, executor/, captcha/
+├── requirements.txt
+└── .env               # Local config (not committed)
 
-- **数据结构**：使用 `TypedDict` 定义 `GraphState` 管理工作流状态，使用 Pydantic `BaseModel` 定义结构化输出
-- **异步编程**：所有工作流节点函数均为 `async` 函数，使用 `await` 处理异步操作
-- **代码生成**：生成的 Playwright 代码必须：
-  - 是原子性的，可独立执行
-  - 使用 `await` 调用 Playwright API
-  - 优先使用 `data-testid` 属性作为选择器
-  - 最后一个操作必须包含断言验证
+frontend/
+├── src/
+│   ├── api/, views/, components/, router/
+├── package.json
+└── vite.config.js
+```
 
-### 测试约定
+## Key Files
+- `backend/app/main.py` - FastAPI entry point
+- `backend/app/core/config.py` - Settings
+- `backend/app/core/database.py` - Database connection
+- `backend/app/services/executor/test_executor.py` - Test execution
+- `backend/app/services/generator/test_generator.py` - Test generation
+- `backend/app/services/llm/bailian_client.py` - LLM client
 
-- 生成的测试必须以 pytest 格式封装
-- 使用 `@pytest.mark.asyncio` 装饰器标记异步测试
-- 测试函数名由 LLM 根据用户需求自动生成
-- 测试执行结果通过 `ipytest` 捕获输出
+## Environment Variables
+Copy `backend/.env.example` to `backend/.env`:
+```env
+BAILIAN_API_KEY=your_key
+BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+BAILIAN_LLM_MODEL=qwen-plus
+BAILIAN_VL_MODEL=qwen-vl-plus
+DATABASE_URL=mysql+aiomysql://user:pass@host:port/db
+DEBUG=True
+BROWSER_HEADLESS=True
+BROWSER_TIMEOUT=30000
+```
 
-### 错误处理
-
-- 代码生成错误时，提供详细的错误报告，包括错误信息、已尝试的操作和部分生成的脚本
-- 使用 AST 解析验证生成的 Python 代码语法
-- 检查生成的代码是否包含有效的 Playwright `page` 命令
-
-### 选择器策略
-
-1. 优先使用 `data-testid` 属性
-2. 如果不存在，使用其他 CSS 选择器
-3. 选择器定位基于当前 DOM 状态动态生成
-
-## 关键文件
-
-- `e2e_testing_agent.ipynb` - 主项目文件，包含完整的工作流定义、节点函数和执行示例
-- `AGENTS.md` - 本文件，项目说明文档
-
-## 使用场景
-
-本项目适用于：
-- 快速生成 E2E 测试用例
-- 自动化回归测试
-- 基于自然语言的测试需求转换
-- 动态适应页面变化的测试脚本生成
-
-## 局限性
-
-- 需要稳定的网络连接访问 Azure OpenAI
-- 复杂的动态页面可能需要多次迭代生成
-- Windows 环境需要特殊配置
-- 依赖 LLM 的代码质量，可能需要人工审查
+## Important Notes
+- **Windows**: Use `asyncio.WindowsSelectorEventLoopPolicy()` for Playwright
+- **Database**: Use `selectinload`/`raiseload` for SQLAlchemy relationships to avoid lazy loading
+- **Tests**: Most test files are standalone async scripts run with `python test_file.py`

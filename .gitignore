@@ -66,6 +66,8 @@ backend/test_*.py
 backend/list_*.py
 backend/add_*.py
 backend/.env
+backend/.venv
+backend/app/temp/
 
 # Trae
 .trae/

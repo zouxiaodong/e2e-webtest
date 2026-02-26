@@ -4,179 +4,144 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an **AI-Driven End-to-End (E2E) Testing Platform** that allows users to generate and execute automated browser tests using natural language descriptions. It combines Qwen LLM models from Aliyun's Bailian platform with Playwright for web automation.
+AI-Driven E2E Testing Platform: users describe tests in natural language, the platform generates and executes Playwright browser tests via Qwen LLM (Aliyun Bailian).
 
-**Stack:**
-- Backend: FastAPI + SQLAlchemy (async MySQL)
-- Frontend: Vue 3 + Element Plus
-- LLM: Aliyun Bailian (Qwen models)
-- Browser Automation: Playwright
-- Architecture: Scenario-based test management with session reuse
+**Stack:** FastAPI + SQLAlchemy (async) · Vue 3 + Element Plus · Qwen LLM (qwen-plus / qwen-vl-plus) · Playwright
 
-## Quick Start Commands
+## Commands
 
-### Backend Setup
+### Backend
 ```bash
 cd backend
 pip install -r requirements.txt
 playwright install chromium
-cp .env.example .env
-# Edit .env with your Bailian API key and database credentials
-python start_server.py
-# OR: python -m app.main
+cp .env.example .env          # fill in BAILIAN_API_KEY and DATABASE_URL
+python start_server.py        # OR: python -m app.main
 ```
+Runs on `http://localhost:8000`. Swagger docs at `/docs`.
 
-Backend runs on `http://localhost:8000` with auto-reload enabled. API docs available at `/docs`.
-
-### Frontend Setup
+### Frontend
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                   # runs on http://localhost:5174
 ```
+Vite proxies `/api` → `http://127.0.0.1:8000`.
 
-Frontend runs on `http://localhost:5174`.
+### Database
+Default: **SQLite** (`sqlite+aiosqlite:///./e2etest.db`) — no setup needed.
+For MySQL: `CREATE DATABASE e2etest CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`
+Special characters in DB password must be URL-encoded (`@` → `%40`).
 
-### Database Setup
+### Tests
 ```bash
-# Create database
-mysql -u root -p
-CREATE DATABASE e2etest CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+cd backend && pytest
 ```
 
-Note: If using special characters in DB password, URL-encode them (e.g., `@` → `%40`).
+## Environment Variables (`backend/.env`)
 
-### Running Tests
-```bash
-cd backend
-pytest
-```
-
-## Key Architecture Notes
-
-### Backend Structure
-- **app/api/** - API routes (test_cases, scenarios, configs)
-- **app/models/** - SQLAlchemy models (TestScenario, TestCase, TestSession, GlobalConfig)
-- **app/schemas/** - Pydantic schemas for request/response validation
-- **app/services/**
-  - **llm/** - Bailian API client for test generation
-  - **generator/** - Test generation engine (analyzes scenarios → generates test cases)
-  - **executor/** - Test execution engine (Playwright automation)
-  - **captcha/** - CAPTCHA recognition using qwen-vl-plus
-  - **session/** - Session persistence for login reuse
-  - **computer_use/** - Computer Use API subprocess handler
-
-### Frontend Structure
-- **src/api/** - API client functions
-- **src/views/** - Page components (QuickGenerate, Scenarios, Configs, etc.)
-- **src/router/** - Route definitions
-- **src/components/** - Reusable UI components
-
-### Critical Design Patterns
-
-**1. Scenario-Based Testing**
-The platform operates at the scenario level, not individual test cases. Each scenario can generate multiple test cases based on strategy:
-- **Happy Path** (仅正向测试) - 1 test case (positive flow)
-- **Basic** (基础覆盖) - 3 test cases (positive, exception, boundary)
-- **Comprehensive** (全面测试) - 5 test cases (positive, negative, boundary, exception, security)
-
-Models: `TestScenario` (1) → (N) `TestCase` with priority (P0-P3) and type (positive, negative, boundary, exception, security, etc.).
-
-**2. Session Management**
-Avoid repeated login/LLM calls via session reuse:
-- **no_login** - Public pages, no session needed
-- **perform_login** - Execute login, optionally save session
-- **use_global_session** - Reuse global login session
-- **use_session** - Reuse specific saved session
-
-Sessions store cookies, localStorage, and sessionStorage. TTL: 24 hours by default.
-
-**3. LLM Integration**
-Tests are generated via Qwen LLM:
-- `TestGenerator` parses scenario → generates test code
-- Qwen-vl-plus used for CAPTCHA detection
-- All LLM interactions logged to `backend/logs/llm_interactions.log`
-
-**4. Windows Event Loop Issue**
-The code explicitly handles Windows Playwright compatibility:
-```python
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-```
-This is set in both `start_server.py` and `app/main.py`. **Do not remove this.**
-
-### Important Implementation Notes
-
-- **Async/await everywhere**: All database calls and service methods are async
-- **Playwright subprocess**: Computer Use service spawns subprocess with event loop policy
-- **SQLAlchemy relationships**: Models use async session + selectinload/raiseload to avoid lazy loading issues (see recent commits)
-- **API endpoint organization**: New endpoints should follow RESTful conventions
-- **Test data**: Use `/api/global-config` for centralized username/password/URL configuration
-
-## Environment Variables
-
-Required in `backend/.env`:
 ```
 BAILIAN_API_KEY=your_key
 BAILIAN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 BAILIAN_LLM_MODEL=qwen-plus
 BAILIAN_VL_MODEL=qwen-vl-plus
-DATABASE_URL=mysql+aiomysql://user:password@host/e2etest
+DATABASE_URL=sqlite+aiosqlite:///./e2etest.db   # or mysql+aiomysql://...
 BROWSER_HEADLESS=True
 BROWSER_TIMEOUT=30000
+SESSION_STORAGE_PATH=./session_storage          # optional; defaults to {cwd}/session_storage
 ```
 
-## Common Development Tasks
+Dynamic settings (editable via UI at `/api/configs`) override `.env` for: `TARGET_URL`, `DEFAULT_USERNAME`, `DEFAULT_PASSWORD`, `CAPTCHA_SELECTOR`, `CAPTCHA_INPUT_SELECTOR`, `BROWSER_HEADLESS`, `BROWSER_TIMEOUT`, `USE_COMPUTER_USE`.
 
-**Adding a new API endpoint:**
-1. Create schema in `app/schemas/`
-2. Create/update model in `app/models/`
-3. Create route in `app/api/`
-4. Integrate service logic from `app/services/`
-5. Update CORS settings in `app/main.py` if needed
+## Architecture
 
-**Modifying test generation logic:**
-- Edit `app/services/generator/test_generator.py`
-- Understand scenario analysis flow before generating test cases
-- Refer to `IMPROVEMENTS.md` for multi-strategy generation
+### Data Model
 
-**Debugging LLM issues:**
-- Check `backend/logs/llm_interactions.log` for full API requests/responses
-- Verify Bailian API key in `.env`
-- Check token limits for qwen-plus model
+```
+TestScenario (1) ──→ (N) TestCase ──→ (N) TestReport ──→ (N) TestStepResult
+TestSession (login sessions, 24h TTL)
+GlobalConfig (key-value singleton settings)
+```
 
-**Fixing Playwright execution issues:**
-- Ensure `playwright install chromium` was run
-- On Windows, verify event loop policy is set
-- Check `BROWSER_HEADLESS` setting in `.env`
+**TestScenario** key fields: `generation_strategy` (happy_path/basic/comprehensive), `login_config` (no_login/perform_login/use_global_session/use_session), `use_captcha`, `save_session`, `session_id` FK.
+
+**TestCase** key fields: `priority` (P0–P3), `case_type` (positive/negative/boundary/exception/security/performance/compatibility), `actions` (JSON array), `script` (Playwright Python script).
+
+**TestStepResult** `step_type`: navigation|click|fill|verify|wait|screenshot.
+
+### Test Generation Flow (`app/services/generator/test_generator.py`)
+
+1. **Fetch page content**: Spawns a subprocess running Playwright to screenshot the page and extract cleaned HTML (uses `lxml.html.clean.Cleaner` to strip CSS/JS before sending to LLM).
+2. **Session loading** (if applicable): Injects cookies before navigation; injects localStorage/sessionStorage after load + refreshes page to activate login state; 5-second wait for SSE to settle.
+3. **Page analysis**: Calls qwen-vl-plus on screenshot; falls back to regex HTML parsing if VL fails.
+4. **Case generation by strategy**:
+   - `happy_path` → 1 case (positive, P0)
+   - `basic` → 3 cases (positive P0, exception P1, boundary P2)
+   - `comprehensive` → 5 cases (positive P0, negative P1, boundary P2, exception P2, security P3)
+5. **Playwright code generation**: Calls qwen-plus with DOM state + previous actions context → returns atomic async Python code. Selector priority: `data-testid` > `name` attribute > other strategies. Includes 2-second waits after each action.
+
+All LLM calls are logged (request + response + timing) to `backend/logs/llm_interactions.log` via `app/core/llm_logger.py`.
+
+### Test Execution Flow (`app/services/executor/test_executor.py`)
+
+- `generate_script_only()`: generates script without executing (main path for UI).
+- Actual Playwright work runs via `_run_playwright_in_thread()` in a `ThreadPoolExecutor` — see Windows event loop section below.
+- `playwright_processor.py`: subprocess handler that runs synchronous Playwright API, loads session storage, iterates actions, optionally detects CAPTCHA, optionally uses Computer Use for element location.
+
+### Windows Event Loop (Critical — Do Not Change)
+
+Two different policies are needed:
+
+| Location | Policy | Reason |
+|---|---|---|
+| `start_server.py` + `app/main.py` (main thread) | `WindowsSelectorEventLoopPolicy` | uvicorn/FastAPI compatibility |
+| `test_executor.py` thread worker | `WindowsProactorEventLoopPolicy` | subprocess support required by Playwright |
+
+The thread worker explicitly creates a new event loop (`asyncio.new_event_loop()`) and sets Proactor policy before running Playwright.
+
+### Session Management
+
+Session data (cookies, localStorage, sessionStorage) stored as JSON in `SESSION_STORAGE_PATH`.
+- `no_login`: skip session entirely
+- `perform_login`: run login flow, optionally call `session_manager.save_session()`
+- `use_global_session` / `use_session`: call `session_manager.restore_session()` before page load
+
+`session_manager.py` methods: `save_session`, `restore_session`, `clear_session`, `is_session_expired` (24h TTL), `get_session_summary`.
+
+### CAPTCHA Handling
+
+`captcha_handler.py` uses qwen-vl-plus to recognize CAPTCHA images. When `auto_detect_captcha=True`, verification-type actions (keywords: 验证, 断言, assert…) are skipped during processing and `browser_util.detect_and_solve_captcha(page)` is called before login button clicks.
+
+### SQLAlchemy Async Patterns
+
+- All DB operations use `AsyncSession` with `async/await`.
+- Always use `selectinload` for relationships (e.g., `TestReport.step_results`) to avoid `MissingGreenlet` errors. Do **not** use lazy loading.
+- `database.py` auto-detects SQLite vs MySQL via `is_sqlite = settings.DATABASE_URL.startswith("sqlite")` and adjusts engine kwargs (e.g., `check_same_thread=False` for SQLite).
+
+## Key Files
+
+| File | Purpose |
+|---|---|
+| `backend/app/services/generator/test_generator.py` | LLM-based test case + Playwright code generation |
+| `backend/app/services/executor/test_executor.py` | Script generation, thread management, execution |
+| `backend/app/services/executor/playwright_processor.py` | Subprocess Playwright runner |
+| `backend/app/services/session/session_manager.py` | Login session persistence |
+| `backend/app/services/tools/captcha_handler.py` | CAPTCHA recognition via VL model |
+| `backend/app/core/config.py` | Settings (env vars + defaults) |
+| `backend/app/core/database.py` | Async DB engine + session factory |
+| `backend/app/models/test_case.py` | TestScenario, TestCase, TestReport, TestStepResult models |
+| `backend/app/models/test_session.py` | TestSession model + LoginConfig enum |
+
+## API Endpoints
+
+**Scenarios** (`/api/scenarios`): CRUD + `POST /{id}/generate`, `POST /{id}/execute`, `GET /{id}/cases`, `GET /{id}/reports`, `GET /{id}/reports/{report_id}/steps`, `POST /quick-generate`
+
+**Test Cases** (`/api/test-cases`): CRUD + `POST /{id}/generate`, `POST /{id}/execute`, `GET /{id}/reports`
+
+**Configs** (`/api/configs`): `GET|PUT /settings` (bulk), `GET|PUT /{config_key}` (single)
 
 ## Documentation Files
 
-- **README.md** - User guide, setup instructions, feature overview
-- **IMPROVEMENTS.md** - Detailed explanation of scenario-based testing and generation strategies
-- **SESSION_MANAGEMENT.md** - Session persistence and reuse architecture
-- **AGENTS.md** - Original LangGraph-based agent architecture (reference only)
-
-## Database Schema Highlights
-
-Key relationships:
-- `TestScenario` (1) → (N) `TestCase` (scenario_id foreign key)
-- `TestCase` → `TestReport` (test_case_id foreign key)
-- `TestSession` → usage tracked via `last_used_at`
-- `GlobalConfig` - singleton pattern for system-wide settings
-
-Fields to note:
-- `TestCase.priority` - P0/P1/P2/P3
-- `TestCase.case_type` - positive/negative/boundary/exception/security/performance/compatibility
-- `TestSession.expires_at` - automatic expiration logic needed in cleanup
-- `TestScenario.generation_strategy` - happy_path/basic/comprehensive
-
-## Git Notes
-
-Recent commits focus on:
-- Event loop policy fixes for Windows + Playwright
-- SQLAlchemy async/await pattern consistency
-- selectinload/raiseload for relationship optimization
-- Computer Use subprocess integration
-
-Current working state: `backend/start_server.py` has uncommitted changes (likely debug output or settings).
+- **IMPROVEMENTS.md** — scenario-based testing evolution, multi-strategy generation details
+- **SESSION_MANAGEMENT.md** — session persistence architecture
+- **backend/LLM_LOGS.md** — LLM interaction logging format
