@@ -10,6 +10,7 @@ from sqlalchemy import select
 from ...models.global_config import GlobalConfig, ConfigKeys
 from ...core.llm_logger import llm_logger
 import json
+import re
 from lxml.html.clean import Cleaner
 import lxml.html
 

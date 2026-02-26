@@ -68,6 +68,7 @@ backend/add_*.py
 backend/.env
 backend/.venv
 backend/app/temp/
+backend/error_screenshot.png
 
 # Trae
 .trae/

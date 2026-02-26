@@ -809,13 +809,6 @@ if __name__ == "__main__":
             captcha_info = await self._detect_captcha_from_page(page_content)
             print(f"✅ 验证码检测结果: has_captcha={captcha_info['has_captcha']}, type={captcha_info['captcha_type']}")
 
-            # 步骤2.6: 提取表单选择器
-            print("\n步骤2.6: 提取表单选择器...")
-            form_selectors = test_generator.extract_form_selectors(page_content.get('html', ''))
-            print(f"✅ 提取到 {len(form_selectors)} 个表单选择器")
-            for name, selector in form_selectors.items():
-                print(f"   {name}: {selector}")
-
             # 步骤3: 基于页面分析生成操作步骤
             print("\n步骤3: 生成操作步骤...")
             actions = await self._generate_actions_with_context(
@@ -824,11 +817,11 @@ if __name__ == "__main__":
             result["actions"] = actions
             print(f"✅ 生成了 {len(actions)} 个操作步骤")
 
-            # 步骤4: 使用 Computer-Use 方案生成脚本
+            # 步骤4: 使用 Computer-Use 方案生成脚本（纯坐标方式，不需要表单选择器）
             print("\n步骤4: 使用 Computer-Use 方案生成完整测试脚本...")
             final_script = await self._generate_computer_use_script(
                 target_url, actions, auto_detect_captcha, auto_cookie_localstorage, load_saved_storage,
-                captcha_info=captcha_info, form_selectors=form_selectors
+                captcha_info=captcha_info
             )
             result["script"] = final_script
             print("✅ 脚本生成完成")
@@ -858,11 +851,10 @@ if __name__ == "__main__":
         auto_detect_captcha: bool = False,
         auto_cookie_localstorage: bool = True,
         load_saved_storage: bool = True,
-        captcha_info: Dict[str, Any] = None,
-        form_selectors: Dict[str, str] = None
+        captcha_info: Dict[str, Any] = None
     ) -> str:
         """
-        使用 Computer-Use 方案生成测试脚本
+        使用 Computer-Use 方案生成测试脚本（纯坐标方式）
         Args:
             target_url: 目标URL
             actions: 操作列表
@@ -870,7 +862,6 @@ if __name__ == "__main__":
             auto_cookie_localstorage: 是否自动加载和保存cookie/localstorage
             load_saved_storage: 是否加载保存的cookie/localstorage/sessionstorage
             captcha_info: VL验证码检测结果 + DB配置选择器
-            form_selectors: 从DOM提取的表单选择器
         Returns:
             完整的测试脚本
         """
@@ -1072,8 +1063,7 @@ if __name__ == "__main__":
                             print(f"   ⚠️ 操作 {i} Computer-Use未找到元素，回退到DOM选择器: {action_result.get('reasoning', '')}")
                             dom_state = (await page.content())[:5000]
                             action_code = await test_generator.generate_playwright_code(
-                                action, dom_state, aggregated_actions, is_last,
-                                form_selectors=(form_selectors or {})
+                                action, dom_state, aggregated_actions, is_last
                             )
                             code_lines.append(f"                # Action {i}: {action}")
                             code_lines.append(f"                log_step_start({i}, {action_escaped}, 'action')")

@@ -9,7 +9,9 @@
       "Bash(python3:*)",
       "Bash(git:*)",
       "Bash(python:*)",
-      "Bash(sudo ln:*)"
+      "Bash(sudo ln:*)",
+      "Bash(curl:*)",
+      "Bash(ls:*)"
     ]
   }
 }
