@@ -452,6 +452,8 @@ class TestExecutor:
             action_codes.append("                    _sys.path.insert(0, _python_path)")
             action_codes.append("                    print(f'[TEST] sys.path已添加: {_python_path}')")
 
+        captcha_injected = False  # 跟踪验证码处理是否已注入
+
         for i, action in enumerate(actions[1:], 1):  # 跳过第一个导航操作
             is_last = i == len(actions) - 1
 
@@ -472,6 +474,7 @@ class TestExecutor:
                 action_codes.append(f"                await asyncio.sleep(3)")
                 action_codes.append(f"                print('[TEST] Action {i} completed')")
                 aggregated_actions += f"\n# browser_util.detect_and_solve_captcha(page) 已处理验证码"
+                captcha_injected = True
                 continue
 
             # 填写验证码识别结果动作：detect_and_solve_captcha 已包含此步骤，跳过
@@ -498,7 +501,29 @@ class TestExecutor:
                 action_codes.append(f"                await asyncio.sleep(3)")
                 action_codes.append(f"                print('[TEST] Action {i} completed')")
                 aggregated_actions += f"\n# browser_util.detect_and_solve_captcha(page) 已处理验证码"
+                captcha_injected = True
                 continue
+
+            # auto_detect_captcha 模式下：在登录/提交按钮点击之前自动注入验证码处理
+            # （当 LLM 没有生成明确的验证码步骤时）
+            is_login_action = any(k in action.lower() for k in [
+                '登录', '登入', 'login', 'sign in', 'signin', '提交', 'submit', '确认登录'
+            ]) and any(k in action.lower() for k in ['点击', 'click', '按钮', 'button', '提交'])
+            if auto_detect_captcha and is_login_action and not captcha_injected:
+                print(f"   [验证码] 操作 {i} 为登录按钮，在点击前自动注入 detect_and_solve_captcha")
+                action_codes.append(f"                # [自动验证码处理] 在登录前自动检测并填写验证码")
+                action_codes.append(f"                print('[TEST] Auto captcha detection before login')")
+                action_codes.append(f"                try:")
+                action_codes.append(f"                    from app.utils.browser_util import get_browser_util as _get_browser_util")
+                action_codes.append(f"                    _captcha_sel = _os.getenv('CAPTCHA_SELECTOR', '') or None")
+                action_codes.append(f"                    await _get_browser_util().detect_and_solve_captcha(page, _captcha_sel)")
+                action_codes.append(f"                    print('[TEST] 验证码已自动识别并填写')")
+                action_codes.append(f"                except ImportError:")
+                action_codes.append(f"                    print('[TEST] Warning: browser_util导入失败，请在.env中配置PYTHON_PATH指向backend目录')")
+                action_codes.append(f"                except Exception as _e:")
+                action_codes.append(f"                    print(f'[TEST] 验证码处理失败（非致命）: {{_e}}')")
+                action_codes.append(f"                await asyncio.sleep(2)")
+                captcha_injected = True
 
             print(f"   正在生成操作 {i}/{len(actions) - 1}: {action}")
 
@@ -784,6 +809,7 @@ if __name__ == "__main__":
 
             local_action_codes = []
             aggregated_actions = ""  # 跟踪已生成的操作，用于 LLM 上下文
+            captcha_injected = False  # 跟踪验证码处理是否已注入
 
             async with async_playwright() as p:
                 browser = await p.chromium.launch(headless=browser_headless)
@@ -863,13 +889,32 @@ if __name__ == "__main__":
                             code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
                             code_lines.append(f"                    raise")
                             local_action_codes.extend(code_lines)
+                            captcha_injected = True
                             continue
-
-                        # 填写验证码识别结果动作：detect_and_solve_captcha 已包含此步骤，跳过
                         if self._is_captcha_fill_action(action):
                             print(f"   [验证码] 操作 {i} 为填写识别结果，已由detect_and_solve_captcha处理，跳过: {action}")
                             local_action_codes.append(f"                # Action {i}: {action} (已由验证码识别步骤自动处理，跳过)")
                             continue
+
+                        # auto_detect_captcha 模式下：在登录/提交按钮点击之前自动注入验证码处理
+                        is_login_action = any(k in action.lower() for k in [
+                            '登录', '登入', 'login', 'sign in', 'signin', '提交', 'submit', '确认登录'
+                        ]) and any(k in action.lower() for k in ['点击', 'click', '按钮', 'button', '提交'])
+                        if auto_detect_captcha and is_login_action and not captcha_injected:
+                            print(f"   [验证码] 操作 {i} 为登录按钮，在点击前自动注入 detect_and_solve_captcha")
+                            action_escaped_cap = repr(action)
+                            code_lines.append(f"                # [自动验证码处理] 在登录前自动检测并填写验证码")
+                            code_lines.append(f"                log_step_start({i}, '自动检测验证码', 'action')")
+                            code_lines.append(f"                try:")
+                            code_lines.append(f"                    from app.utils.browser_util import get_browser_util")
+                            code_lines.append(f"                    await get_browser_util().detect_and_solve_captcha(page)")
+                            code_lines.append(f"                    log_step_end({i}, 'passed')")
+                            code_lines.append(f"                except Exception as e:")
+                            code_lines.append(f"                    log_step_end({i}, 'failed', error_message=str(e))")
+                            code_lines.append(f"                    print(f'验证码处理失败（非致命）: {{e}}')")
+                            local_action_codes.extend(code_lines)
+                            code_lines = []
+                            captcha_injected = True
 
                         print(f"   正在使用 Computer-Use 方案生成操作 {i}/{len(actions) - 1}: {action}")
 
