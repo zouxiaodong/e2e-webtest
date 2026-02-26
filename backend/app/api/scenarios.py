@@ -180,12 +180,21 @@ async def generate_scenario_cases(
         test_case_ids = [row[0] for row in result.fetchall()]
         
         if test_case_ids:
-            # 删除关联的测试报告
+            # 先删除步骤结果（raw SQL delete 不触发 ORM cascade）
+            report_ids_result = await db.execute(
+                select(TestReport.id).where(TestReport.test_case_id.in_(test_case_ids))
+            )
+            report_ids = [row[0] for row in report_ids_result.fetchall()]
+            if report_ids:
+                await db.execute(
+                    delete(TestStepResult).where(TestStepResult.test_report_id.in_(report_ids))
+                )
+            # 再删除关联的测试报告
             await db.execute(
                 delete(TestReport).where(TestReport.test_case_id.in_(test_case_ids))
             )
             await db.commit()
-            print(f"   Deleted {len(test_case_ids)} test reports")
+            print(f"   Deleted {len(report_ids)} test reports and their step results")
         
         # 删除该场景下所有现有的测试用例
         print(f"   Deleting existing test cases for scenario {scenario_id}")
