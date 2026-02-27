@@ -156,7 +156,7 @@
                 <el-button size="small" @click="viewTestCaseScript(row)">
                   查看脚本
                 </el-button>
-                <el-button size="small" type="primary" @click="viewTestCaseReports(row)" :disabled="row.status !== 'generated' && row.status !== 'completed'">
+                <el-button size="small" type="primary" @click="viewTestCaseReports(row)" :disabled="row.status === 'draft'">
                   报告
                 </el-button>
               </template>
@@ -240,6 +240,31 @@
                     </el-tag>
                   </template>
                 </el-table-column>
+                <el-table-column label="截图" width="120">
+                  <template #default="{ row }">
+                    <el-image
+                      v-if="row.screenshot_path"
+                      :src="getScreenshotUrl(row.screenshot_path)"
+                      :preview-src-list="[getScreenshotUrl(row.screenshot_path)]"
+                      fit="cover"
+                      style="width: 80px; height: 60px; cursor: pointer"
+                    />
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="VL验证" width="120">
+                  <template #default="{ row }">
+                    <template v-if="row.output_data && row.output_data.vl_verified !== undefined">
+                      <el-tag :type="row.output_data.vl_verified ? 'success' : 'danger'" size="small">
+                        {{ row.output_data.vl_verified ? '通过' : '未通过' }}
+                      </el-tag>
+                      <el-tooltip v-if="row.output_data.vl_reason" :content="row.output_data.vl_reason" placement="top">
+                        <el-icon style="margin-left: 4px; cursor: help"><InfoFilled /></el-icon>
+                      </el-tooltip>
+                    </template>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
                 <el-table-column prop="execution_duration" label="耗时(ms)" width="100" />
                 <el-table-column prop="error_message" label="错误信息" width="200" show-overflow-tooltip />
                 <el-table-column prop="start_time" label="开始时间" width="180">
@@ -267,7 +292,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus } from '@element-plus/icons-vue'
+import { Plus, InfoFilled } from '@element-plus/icons-vue'
 import { scenariosApi } from '@/api/scenarios'
 import { testCasesApi } from '@/api/testCases'
 
@@ -509,6 +534,21 @@ const formatDateTime = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleString('zh-CN')
+}
+
+// 获取截图URL
+const getScreenshotUrl = (path) => {
+  if (!path) return ''
+  // path 格式: /path/to/session_storage/screenshots/session_id/step_N.png
+  // 提取 screenshots/ 之后的部分作为相对路径
+  const screenshotsIdx = path.indexOf('screenshots/')
+  if (screenshotsIdx !== -1) {
+    const relativePath = path.substring(screenshotsIdx + 'screenshots/'.length)
+    return `/api/screenshots/${relativePath}`
+  }
+  // 兜底：只用文件名
+  const filename = path.split('/').pop().split('\\').pop()
+  return `/api/screenshots/${filename}`
 }
 
 // 查看场景报告

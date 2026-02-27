@@ -1435,6 +1435,14 @@ if __name__ == "__main__":
         python_path = os.getenv('PYTHON_PATH', '')
         session_storage_path = os.getenv('SESSION_STORAGE_PATH', '.')
 
+        # 浏览器 profile 目录（持久化 cookies、localStorage 等）
+        browser_profile_path = os.path.join(session_storage_path, 'browser_profile')
+        os.makedirs(browser_profile_path, exist_ok=True)
+
+        # 生成阶段也使用 --profile，确保生成时能看到已登录状态的页面
+        if load_saved_storage:
+            ab_service.profile_path = browser_profile_path
+
         # 收集每个 action 对应的代码行
         action_codes = []
 
@@ -1456,20 +1464,11 @@ if __name__ == "__main__":
                     raise RuntimeError(f"agent-browser open 失败: {open_result['error']}")
                 await ab_service.wait(3000)
 
-                # ===== 3. 加载 session（如果需要） =====
+                # ===== 3. 会话由 --profile 自动管理（cookies、localStorage 等） =====
                 if load_saved_storage:
-                    cookies_file = os.path.join(session_storage_path, "saved_cookies.json")
-                    if os.path.exists(cookies_file):
-                        print(f"[AgentBrowser] 加载 cookies: {cookies_file}")
-                        import json as _json
-                        with open(cookies_file, "r", encoding="utf-8") as f:
-                            cookies = _json.load(f)
-                        for cookie in cookies:
-                            name = cookie.get("name", "")
-                            value = cookie.get("value", "")
-                            domain = cookie.get("domain", "")
-                            if name and value:
-                                await ab_service.cookies_set(name, value, domain=domain)
+                    print(f"[AgentBrowser] 使用 --profile 加载已保存的浏览器状态: {browser_profile_path}")
+                else:
+                    print("[AgentBrowser] 登录场景，不加载已有浏览器状态")
 
                 # ===== 4. 获取无障碍树快照用于生成 actions =====
                 print("[AgentBrowser] 获取页面无障碍树快照...")
@@ -1523,7 +1522,10 @@ if __name__ == "__main__":
                         action_codes.append(f"        log_step_start({captcha_step}, {action_escaped_cap}, 'action')")
                         action_codes.append(f"        try:")
                         action_codes.append(f"            ab.detect_and_solve_captcha()")
-                        action_codes.append(f"            log_step_end({captcha_step}, 'passed')")
+                        action_codes.append(f"            screenshot_path_{captcha_step} = os.path.join(EXEC_SCREENSHOTS_DIR, 'step_{captcha_step}.png')")
+                        action_codes.append(f"            ab.screenshot(path=screenshot_path_{captcha_step})")
+                        action_codes.append(f"            step_screenshots.append({{\"step_number\": {captcha_step}, \"step_name\": {action_escaped_cap}, \"screenshot_path\": screenshot_path_{captcha_step}}})")
+                        action_codes.append(f"            log_step_end({captcha_step}, 'passed', {{\"screenshot_path\": screenshot_path_{captcha_step}}})")
                         action_codes.append(f"        except Exception as e:")
                         action_codes.append(f"            log_step_end({captcha_step}, 'failed', error_message=str(e))")
                         action_codes.append(f"            print(f'验证码处理失败（非致命）: {{e}}')")
@@ -1538,9 +1540,11 @@ if __name__ == "__main__":
                         action_codes.append(f"        # Action {sn}: {action}")
                         action_codes.append(f"        log_step_start({sn}, {action_escaped}, 'verify')")
                         action_codes.append(f"        try:")
-                        action_codes.append(f"            ab.screenshot()")
+                        action_codes.append(f"            screenshot_path_{sn} = os.path.join(EXEC_SCREENSHOTS_DIR, 'step_{sn}.png')")
+                        action_codes.append(f"            ab.screenshot(path=screenshot_path_{sn})")
+                        action_codes.append(f"            step_screenshots.append({{\"step_number\": {sn}, \"step_name\": {action_escaped}, \"screenshot_path\": screenshot_path_{sn}}})")
                         action_codes.append(f"            ab.wait(2000)")
-                        action_codes.append(f"            log_step_end({sn}, 'passed')")
+                        action_codes.append(f"            log_step_end({sn}, 'passed', {{\"screenshot_path\": screenshot_path_{sn}}})")
                         action_codes.append(f"        except Exception as e:")
                         action_codes.append(f"            log_step_end({sn}, 'failed', error_message=str(e))")
                         action_codes.append(f"            raise")
@@ -1599,7 +1603,10 @@ if __name__ == "__main__":
                                 action_codes.append(f"            ab.wait(2000)")
 
                         action_codes.append(f"            ab.wait(2000)")
-                        action_codes.append(f"            log_step_end({sn}, 'passed')")
+                        action_codes.append(f"            screenshot_path_{sn} = os.path.join(EXEC_SCREENSHOTS_DIR, 'step_{sn}.png')")
+                        action_codes.append(f"            ab.screenshot(path=screenshot_path_{sn})")
+                        action_codes.append(f"            step_screenshots.append({{\"step_number\": {sn}, \"step_name\": {action_escaped}, \"screenshot_path\": screenshot_path_{sn}}})")
+                        action_codes.append(f"            log_step_end({sn}, 'passed', {{\"screenshot_path\": screenshot_path_{sn}}})")
                         action_codes.append(f"        except Exception as e:")
                         action_codes.append(f"            log_step_end({sn}, 'failed', error_message=str(e))")
                         action_codes.append(f"            raise")
@@ -1620,23 +1627,8 @@ if __name__ == "__main__":
 
                     aggregated += f"\n# Action {i}: {action}"
 
-                # ===== 7. 保存 session =====
-                if auto_cookie_localstorage:
-                    try:
-                        cookies_result = await ab_service.cookies_get()
-                        _data = cookies_result.get("data", {})
-                        cookies_data = _data.get("cookies", []) if isinstance(_data, dict) else []
-                        if not cookies_data:
-                            cookies_data = cookies_result.get("cookies", [])
-                        if cookies_data:
-                            os.makedirs(session_storage_path, exist_ok=True)
-                            cookies_file = os.path.join(session_storage_path, "saved_cookies.json")
-                            import json as _json
-                            with open(cookies_file, "w", encoding="utf-8") as f:
-                                _json.dump(cookies_data, f, ensure_ascii=False, indent=2)
-                            print(f"[AgentBrowser] Cookies 已保存: {len(cookies_data)} 个")
-                    except Exception as e:
-                        print(f"[AgentBrowser] 保存 cookies 失败: {e}")
+                # ===== 7. 会话状态由 --profile 自动保存 =====
+                print("[AgentBrowser] 浏览器状态已由 --profile 自动保存")
 
             finally:
                 print("[AgentBrowser] 正在关闭浏览器...")
@@ -1652,23 +1644,18 @@ if __name__ == "__main__":
         # 组装完整 Python 脚本
         actions_str = "\n".join(action_codes)
 
-        # 构建 cookies 加载/保存代码
-        cookies_load_code = ""
-        if load_saved_storage:
-            cookies_load_code = f"""
-        # 加载 cookies
-        cookies_file = os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json')
-        if os.path.exists(cookies_file):
-            ab.load_cookies(cookies_file)
-            print(f'[TEST] Cookies loaded from {{cookies_file}}')
-"""
-
-        cookies_save_code = ""
-        if auto_cookie_localstorage:
-            cookies_save_code = f"""
-        # 保存 cookies
-        cookies_file = os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json')
-        ab.save_cookies(cookies_file)
+        # 使用 --profile 持久化浏览器状态（cookies、localStorage 等）
+        # 登录场景 (load_saved_storage=False): 清空 profile 重新登录，执行后自动保存状态
+        # 非登录场景 (load_saved_storage=True): 复用已有 profile，自动带上登录状态
+        clear_profile_code = ""
+        if not load_saved_storage:
+            clear_profile_code = """
+    # 登录场景：清空已有 profile，确保从全新状态开始登录
+    import shutil
+    if os.path.exists(BROWSER_PROFILE_PATH):
+        shutil.rmtree(BROWSER_PROFILE_PATH)
+        print(f'[TEST] 已清空浏览器 profile: {BROWSER_PROFILE_PATH}')
+    os.makedirs(BROWSER_PROFILE_PATH, exist_ok=True)
 """
 
         script = f'''import sys
@@ -1690,6 +1677,14 @@ from datetime import datetime
 
 # 全局步骤结果列表
 step_results = []
+
+# 截图目录
+SCREENSHOTS_DIR = os.path.join(SESSION_STORAGE_PATH, 'screenshots')
+os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
+
+# 浏览器 profile 目录（持久化 cookies、localStorage 等）
+BROWSER_PROFILE_PATH = os.path.join(SESSION_STORAGE_PATH, 'browser_profile')
+os.makedirs(BROWSER_PROFILE_PATH, exist_ok=True)
 
 def log_step_start(step_number, step_name, step_type="action"):
     """记录步骤开始"""
@@ -1732,8 +1727,16 @@ def log_step_end(step_number, status="passed", output_data=None, error_message=N
 def test_generated():
     print(json.dumps({{"event": "test_start", "message": "Test started"}}, ensure_ascii=False))
     from app.utils.ab_browser_util import AgentBrowserUtil
-    ab = AgentBrowserUtil(session_id=uuid.uuid4().hex[:8])
+    session_id = uuid.uuid4().hex[:8]
+{clear_profile_code}
+    # 使用 --profile 自动持久化浏览器状态（cookies、localStorage、sessionStorage 等）
+    ab = AgentBrowserUtil(session_id=session_id, profile_path=BROWSER_PROFILE_PATH)
     test_start_time = time.time()
+    step_screenshots = []  # 收集每步截图信息用于批量VL验证
+
+    # 为本次执行创建独立截图子目录
+    EXEC_SCREENSHOTS_DIR = os.path.join(SCREENSHOTS_DIR, session_id)
+    os.makedirs(EXEC_SCREENSHOTS_DIR, exist_ok=True)
 
     try:
         # Step 0: Navigate
@@ -1742,14 +1745,32 @@ def test_generated():
             ab.open("{target_url}", headless={browser_headless})
             time.sleep(3)
             ab.wait(3000)
-            log_step_end(0, "passed", {{"url": "{target_url}"}})
+            # 截图
+            screenshot_path_0 = os.path.join(EXEC_SCREENSHOTS_DIR, 'step_0.png')
+            ab.screenshot(path=screenshot_path_0)
+            step_screenshots.append({{"step_number": 0, "step_name": "Navigate to {target_url}", "screenshot_path": screenshot_path_0}})
+            log_step_end(0, "passed", {{"url": "{target_url}", "screenshot_path": screenshot_path_0}})
         except Exception as e:
             log_step_end(0, "failed", error_message=str(e))
             raise
-{cookies_load_code}
+
         # Execute all actions
 {actions_str}
-{cookies_save_code}
+        # 批量VL验证截图
+        valid_screenshots = [s for s in step_screenshots if os.path.exists(s["screenshot_path"])]
+        if valid_screenshots:
+            try:
+                verification_results = ab.verify_step_screenshots(valid_screenshots)
+                for vr in verification_results:
+                    print(json.dumps({{
+                        "event": "step_verification",
+                        "step_number": vr["step_number"],
+                        "verified": vr["verified"],
+                        "reason": vr["reason"]
+                    }}, ensure_ascii=False))
+            except Exception as vl_err:
+                print(f"[VL验证] 批量验证失败（非致命）: {{vl_err}}")
+
         print(json.dumps({{"event": "test_completed", "total_duration_ms": int((time.time() - test_start_time) * 1000)}}, ensure_ascii=False))
 
     except Exception as e:
@@ -1880,23 +1901,23 @@ if __name__ == "__main__":
         """
         import json
         import re
-        
+
         step_results = []
         lines = execution_output.split('\n')
-        
+
         for line in lines:
             try:
                 if line.strip().startswith('{'):
                     step_data = json.loads(line.strip())
-                    
-                    # 只处理步骤开始和结束事件
-                    if step_data.get("event") in ["step_start", "step_end"]:
+
+                    # 处理步骤开始、结束、VL验证事件
+                    if step_data.get("event") in ["step_start", "step_end", "step_verification"]:
                         step_results.append(step_data)
             except json.JSONDecodeError:
                 continue
             except Exception:
                 continue
-        
+
         return step_results
 
     async def execute_saved_script(self, script: str) -> Dict[str, Any]:
@@ -1926,7 +1947,19 @@ if __name__ == "__main__":
             result["step_results"] = step_results
             
             # 检查执行结果
-            if "FAILED" in execution_output or "Error" in execution_output:
+            # 基于解析出的步骤事件判断（更精确，不会被日志中的 "Error" 文本误触发）
+            has_test_failed_event = any(
+                s.get("event") == "step_end" and s.get("status") == "failed"
+                for s in step_results
+            )
+            has_test_failed_json = any(
+                line.strip().startswith('{') and '"event": "test_failed"' in line
+                for line in execution_output.split('\n')
+            )
+            # pytest 最终汇总行: "X failed" 或 "FAILED"
+            has_pytest_failure = "FAILED" in execution_output and "passed" not in execution_output.split("FAILED")[-1]
+
+            if has_test_failed_event or has_test_failed_json or has_pytest_failure:
                 result["status"] = "failed"
                 result["error"] = "Test execution failed"
             

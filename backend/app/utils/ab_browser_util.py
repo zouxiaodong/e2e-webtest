@@ -17,15 +17,19 @@ from typing import Dict, Any, Optional, List
 class AgentBrowserUtil:
     """同步 agent-browser CLI 工具类"""
 
-    def __init__(self, session_id: str = None):
+    def __init__(self, session_id: str = None, profile_path: str = None):
         self.session_id = session_id or uuid.uuid4().hex[:8]
+        self.profile_path = profile_path
 
     def _run_cli(self, args: List[str], timeout: int = 30) -> Dict[str, Any]:
         """
         同步执行 agent-browser CLI，逐行读 stdout 寻找 JSON。
         使用 subprocess.Popen + 后台线程读 stdout（解决浏览器子进程管道继承问题）。
         """
-        cmd = ["agent-browser", "--session", self.session_id] + args + ["--json"]
+        cmd = ["agent-browser", "--session", self.session_id]
+        if self.profile_path:
+            cmd.extend(["--profile", self.profile_path])
+        cmd.extend(args + ["--json"])
         cmd_str = " ".join(cmd)
         print(f"[AgentBrowserUtil] 执行: {cmd_str}")
 
@@ -420,3 +424,96 @@ class AgentBrowserUtil:
                 os.unlink(path)
         except Exception:
             pass
+
+    def verify_step_screenshots(self, step_screenshots: list) -> list:
+        """
+        批量调用 VL 模型验证每个步骤的截图是否执行成功。
+        Args:
+            step_screenshots: [{"step_number": 1, "step_name": "输入用户名", "screenshot_path": "..."}]
+        Returns:
+            [{"step_number": 1, "verified": True/False, "reason": "..."}]
+        """
+        try:
+            from openai import OpenAI
+
+            api_key = os.getenv("BAILIAN_API_KEY", "")
+            base_url = os.getenv("BAILIAN_BASE_URL", "")
+            vl_model = os.getenv("BAILIAN_VL_MODEL", "qwen-vl-plus")
+
+            if not api_key or not base_url:
+                print("[AgentBrowserUtil] 未配置 BAILIAN_API_KEY 或 BAILIAN_BASE_URL，跳过VL验证")
+                return []
+
+            client = OpenAI(api_key=api_key, base_url=base_url)
+            results = []
+
+            for step_info in step_screenshots:
+                step_number = step_info["step_number"]
+                step_name = step_info["step_name"]
+                screenshot_path = step_info["screenshot_path"]
+
+                if not os.path.exists(screenshot_path):
+                    print(f"[AgentBrowserUtil] 截图文件不存在，跳过: {screenshot_path}")
+                    results.append({
+                        "step_number": step_number,
+                        "verified": False,
+                        "reason": "截图文件不存在"
+                    })
+                    continue
+
+                try:
+                    with open(screenshot_path, "rb") as f:
+                        screenshot_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+                    response = client.chat.completions.create(
+                        model=vl_model,
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": (
+                                    "你是一个网页测试验证专家。你需要根据网页截图判断某个操作步骤是否执行成功。\n"
+                                    "只返回 SUCCESS 或 FAILED，后跟一个简短的原因（不超过30字）。\n"
+                                    "格式：SUCCESS: 原因 或 FAILED: 原因"
+                                ),
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": f"这是执行'{step_name}'之后的网页截图，请判断该操作是否执行成功。"
+                                    },
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {"url": f"data:image/png;base64,{screenshot_b64}"}
+                                    },
+                                ],
+                            },
+                        ],
+                        temperature=0.0,
+                        max_tokens=100,
+                    )
+                    vl_response = response.choices[0].message.content.strip()
+                    print(f"[AgentBrowserUtil] VL验证 step {step_number}: {vl_response}")
+
+                    verified = vl_response.upper().startswith("SUCCESS")
+                    reason = vl_response.split(":", 1)[1].strip() if ":" in vl_response else vl_response
+                    results.append({
+                        "step_number": step_number,
+                        "verified": verified,
+                        "reason": reason
+                    })
+
+                except Exception as e:
+                    print(f"[AgentBrowserUtil] VL验证 step {step_number} 失败: {e}")
+                    results.append({
+                        "step_number": step_number,
+                        "verified": False,
+                        "reason": f"VL验证调用失败: {str(e)}"
+                    })
+
+            return results
+
+        except Exception as e:
+            print(f"[AgentBrowserUtil] VL批量验证失败: {e}")
+            return []

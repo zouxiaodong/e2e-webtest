@@ -4,7 +4,7 @@ import os
 import logging
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from contextlib import asynccontextmanager
 
 # 添加项目根目录到Python路径，确保测试脚本可以导入app模块
@@ -133,6 +133,22 @@ async def log_requests(request: Request, call_next):
 app.include_router(test_cases.router)
 app.include_router(scenarios.router)
 app.include_router(configs.router)
+
+
+@app.get("/api/screenshots/{file_path:path}")
+async def serve_screenshot(file_path: str):
+    """提供截图文件访问"""
+    from fastapi import HTTPException
+    screenshots_dir = os.path.join(settings.SESSION_STORAGE_PATH or ".", "screenshots")
+    full_path = os.path.join(screenshots_dir, file_path)
+    # 安全检查：防止路径遍历
+    real_screenshots_dir = os.path.realpath(screenshots_dir)
+    real_full_path = os.path.realpath(full_path)
+    if not real_full_path.startswith(real_screenshots_dir):
+        raise HTTPException(status_code=403, detail="Access denied")
+    if not os.path.exists(full_path):
+        raise HTTPException(status_code=404, detail="Screenshot not found")
+    return FileResponse(full_path, media_type="image/png")
 
 
 @app.get("/")

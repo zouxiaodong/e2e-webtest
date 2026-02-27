@@ -421,10 +421,6 @@ async def execute_scenario_cases(
     passed_count = 0
     failed_count = 0
 
-    # 获取场景的load_saved_storage配置
-    load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
-    print(f"   Load saved storage from scenario: {load_saved_storage}")
-    
     for test_case in test_cases:
         try:
             # 更新用例状态
@@ -435,45 +431,16 @@ async def execute_scenario_cases(
             )
             await db.commit()
 
-            # 优先使用已保存的脚本，但如果load_saved_storage为False，需要重新生成脚本
-            if test_case.script and test_case.script.strip() and load_saved_storage:
+            # 使用已保存的脚本执行（脚本在"生成用例"时已生成）
+            if test_case.script and test_case.script.strip():
                 print(f"   Using saved script for test case {test_case.id}")
-                # DEBUG: 检查已保存脚本是否包含验证码处理
-                has_captcha_handling = "detect_and_solve_captcha" in test_case.script
-                has_browser_util = "browser_util" in test_case.script
-                print(f"   [DEBUG] 脚本验证码处理: detect_and_solve_captcha={has_captcha_handling}, browser_util={has_browser_util}")
-                if not has_captcha_handling and scenario.use_captcha:
-                    print(f"   ⚠️ 场景启用了验证码但脚本中没有验证码处理代码，建议重新生成脚本")
                 execution_result = await test_executor.execute_saved_script(test_case.script)
             else:
-                if not load_saved_storage:
-                    print(f"   Regenerating script without loading saved storage for test case {test_case.id}")
-                else:
-                    print(f"   No saved script found, generating new script for test case {test_case.id}")
-                
-                # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
-                use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
-                auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
-                
-                # 重新生成脚本，传入load_saved_storage配置
-                script_result = await test_executor.generate_script_only(
-                    test_case.user_query,
-                    test_case.target_url,
-                    auto_detect_captcha=use_captcha,
-                    auto_cookie_localstorage=auto_cookie_localstorage,
-                    load_saved_storage=load_saved_storage
-                )
-                
-                if script_result.get("status") == "success":
-                    # 执行生成的脚本
-                    execution_result = await test_executor.execute_saved_script(script_result.get("script", ""))
-                    # 更新测试用例的脚本
-                    test_case.script = script_result.get("script", "")
-                else:
-                    execution_result = {
-                        "status": "error",
-                        "error": script_result.get("error", "Failed to generate script")
-                    }
+                print(f"   No saved script found for test case {test_case.id}, skipping (please generate first)")
+                execution_result = {
+                    "status": "error",
+                    "error": "测试脚本为空，请先点击'生成用例'生成测试脚本"
+                }
 
             # 更新用例
             status = "completed" if execution_result.get("status") == "success" else "failed"
@@ -505,8 +472,11 @@ async def execute_scenario_cases(
                 # 将 step_start/step_end 事件配对后写入数据库
                 step_starts = {s["step_number"]: s for s in step_results_data if s.get("event") == "step_start"}
                 step_ends = {s["step_number"]: s for s in step_results_data if s.get("event") == "step_end"}
+                # 收集 VL 验证结果
+                step_verifications = {s["step_number"]: s for s in step_results_data if s.get("event") == "step_verification"}
                 for step_num, start_data in step_starts.items():
                     end_data = step_ends.get(step_num, {})
+                    verification = step_verifications.get(step_num, {})
                     start_time = None
                     end_time = None
                     try:
@@ -516,6 +486,22 @@ async def execute_scenario_cases(
                             end_time = datetime.fromisoformat(end_data["end_time"])
                     except Exception:
                         pass
+
+                    # 从 output_data 提取 screenshot_path
+                    output_data = end_data.get("output_data")
+                    screenshot_path = None
+                    if isinstance(output_data, dict):
+                        screenshot_path = output_data.get("screenshot_path")
+
+                    # 合并 VL 验证结果到 output_data
+                    if verification:
+                        if output_data is None:
+                            output_data = {}
+                        elif not isinstance(output_data, dict):
+                            output_data = {}
+                        output_data["vl_verified"] = verification.get("verified")
+                        output_data["vl_reason"] = verification.get("reason")
+
                     step_record = TestStepResult(
                         test_report_id=test_report.id,
                         step_number=step_num,
@@ -525,8 +511,9 @@ async def execute_scenario_cases(
                         start_time=start_time,
                         end_time=end_time,
                         execution_duration=end_data.get("execution_duration_ms"),
-                        output_data=end_data.get("output_data"),
+                        output_data=output_data,
                         error_message=end_data.get("error_message"),
+                        screenshot_path=screenshot_path,
                     )
                     db.add(step_record)
 

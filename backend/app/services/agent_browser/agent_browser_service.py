@@ -11,8 +11,9 @@ logger = logging.getLogger("agent_browser")
 class AgentBrowserService:
     """封装 agent-browser CLI 调用"""
 
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, session_id: Optional[str] = None, profile_path: Optional[str] = None):
         self.session_id = session_id or str(uuid.uuid4())[:8]
+        self.profile_path = profile_path
 
     async def _run_cli(self, args: List[str], timeout: int = 30) -> Dict[str, Any]:
         """
@@ -20,7 +21,10 @@ class AgentBrowserService:
         采用逐行读取 stdout 的方式：一旦收到完整 JSON 就立即返回，
         不等待进程退出（因为浏览器子进程会继承管道导致 communicate() 永远阻塞）。
         """
-        cmd = ["agent-browser", "--session", self.session_id] + args + ["--json"]
+        cmd = ["agent-browser", "--session", self.session_id]
+        if self.profile_path:
+            cmd.extend(["--profile", self.profile_path])
+        cmd.extend(args + ["--json"])
         cmd_str = " ".join(cmd)
         logger.info(f"[CMD] >>> {cmd_str}")
         print(f"[AgentBrowser] 执行: {cmd_str}")
