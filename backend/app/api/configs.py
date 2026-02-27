@@ -49,6 +49,7 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         captcha_input_selector=config_dict.get(ConfigKeys.CAPTCHA_INPUT_SELECTOR),
         browser_headless=config_dict.get(ConfigKeys.BROWSER_HEADLESS, "true") == "true",
         use_computer_use=config_dict.get(ConfigKeys.USE_COMPUTER_USE, "false") == "true",
+        use_agent_browser=config_dict.get(ConfigKeys.USE_AGENT_BROWSER, "false") == "true",
         browser_timeout=int(config_dict.get(ConfigKeys.BROWSER_TIMEOUT, "30000"))
     )
 
@@ -70,6 +71,7 @@ async def update_settings(
         (ConfigKeys.CAPTCHA_INPUT_SELECTOR, settings.captcha_input_selector, "验证码输入框选择器", "string"),
         (ConfigKeys.BROWSER_HEADLESS, str(settings.browser_headless).lower(), "浏览器无头模式", "boolean"),
         (ConfigKeys.USE_COMPUTER_USE, str(settings.use_computer_use).lower(), "使用Computer-Use方案", "boolean"),
+        (ConfigKeys.USE_AGENT_BROWSER, str(settings.use_agent_browser).lower(), "使用agent-browser方案", "boolean"),
         (ConfigKeys.BROWSER_TIMEOUT, str(settings.browser_timeout), "浏览器超时时间", "number"),
     ]
     

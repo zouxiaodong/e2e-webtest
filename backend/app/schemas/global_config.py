@@ -43,4 +43,5 @@ class GlobalConfigSettings(BaseModel):
     captcha_input_selector: Optional[str] = Field("", description="验证码输入框选择器")
     browser_headless: bool = Field(True, description="浏览器无头模式")
     use_computer_use: bool = Field(False, description="使用Computer-Use方案（截图+坐标定位）")
+    use_agent_browser: bool = Field(False, description="使用agent-browser方案（无障碍树+ref定位）")
     browser_timeout: int = Field(30000, description="浏览器超时时间(毫秒)")

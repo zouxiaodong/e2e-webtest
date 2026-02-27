@@ -31,3 +31,4 @@ class ConfigKeys:
     BROWSER_HEADLESS = "browser_headless"  # 浏览器无头模式
     BROWSER_TIMEOUT = "browser_timeout"  # 浏览器超时时间
     USE_COMPUTER_USE = "use_computer_use"  # 使用 Computer-Use 方案（截图+坐标）
+    USE_AGENT_BROWSER = "use_agent_browser"  # 使用 agent-browser 方案（无障碍树+ref）

@@ -16,6 +16,8 @@ from ..generator.test_generator import test_generator
 from ..captcha.captcha_service import captcha_service
 from ..llm.bailian_client import bailian_client
 from ..computer_use.computer_use_service import computer_use_service
+from ..agent_browser.agent_browser_service import AgentBrowserService
+from ..agent_browser.action_planner import ActionPlanner
 
 load_dotenv()
 
@@ -1267,6 +1269,508 @@ if __name__ == "__main__":
 '''
         return script
 
+    async def _generate_actions_from_snapshot(
+        self,
+        user_query: str,
+        target_url: str,
+        snapshot_text: str,
+    ) -> List[str]:
+        """
+        基于 agent-browser 无障碍树快照生成操作步骤（不需要 VL 模型）
+        Args:
+            user_query: 用户查询
+            target_url: 目标URL
+            snapshot_text: 页面无障碍树快照文本
+        Returns:
+            操作步骤列表
+        """
+        system_prompt = """你是一个端到端测试专家。你的目标是将通用的业务端到端测试任务分解为更小的、明确定义的操作。"""
+
+        prompt = f"""将以下输入转换为包含"actions"键和原子步骤列表作为值的JSON字典。
+这些步骤将用于生成端到端测试脚本。
+每个操作都应该是一个清晰的、原子步骤，可以转换为代码。
+尽量生成完成用户测试意图所需的最少操作数量。
+第一个操作必须始终是导航到目标URL。
+最后一个操作应该始终是断言测试的预期结果。
+不要在这个JSON结构之外添加任何额外的字符、注释或解释。只输出JSON结果。
+
+当前页面无障碍树快照（@eN 为可交互元素的引用）：
+{snapshot_text[:5000]}
+
+示例:
+输入: "测试网站的登录流程"
+输出: {{
+    "actions": [
+        "通过URL导航到登录页面。",
+        "定位并在'username'输入框中输入有效的用户名",
+        "定位并在'password'输入框中输入有效的密码",
+        "点击'登录'按钮提交凭据",
+        "通过期望页面跳转到首页来验证用户已登录"
+    ]
+}}
+
+目标URL: {target_url}
+用户查询: {user_query}
+输出:"""
+
+        response = await bailian_client.generate_text(prompt, system_prompt)
+
+        import json
+        try:
+            parsed = json.loads(response)
+            return parsed.get("actions", [])
+        except json.JSONDecodeError:
+            return [
+                f"通过URL导航到 {target_url}",
+                user_query,
+                "验证测试已成功完成"
+            ]
+
+    async def generate_script_with_agent_browser(
+        self,
+        user_query: str,
+        target_url: str,
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True,
+        page_content: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        使用 agent-browser 方案生成测试脚本（基于无障碍树 snapshot/ref）。
+        生成阶段打开真实浏览器进行 snapshot+plan+执行，提取 element_name/element_role，
+        产出引用 ab_browser_util 的 Python 测试脚本。脚本可通过 subprocess 重新执行。
+        """
+        result = {
+            "status": "success",
+            "actions": [],
+            "script": "",
+            "test_name": "",
+            "error": None,
+        }
+
+        try:
+            print("\n===== 开始使用 agent-browser 方案生成测试脚本 =====")
+            print(f"用户查询: {user_query}")
+            print(f"目标URL: {target_url}")
+
+            # 读取全局配置（用户名、密码、headless）
+            default_username = ""
+            default_password = ""
+            from ...core.database import get_db
+            from ...models.global_config import GlobalConfig, ConfigKeys
+            from sqlalchemy import select
+
+            browser_headless = True
+            async for db in get_db():
+                for key_attr, target_var in [
+                    (ConfigKeys.DEFAULT_USERNAME, "default_username"),
+                    (ConfigKeys.DEFAULT_PASSWORD, "default_password"),
+                    (ConfigKeys.BROWSER_HEADLESS, "browser_headless"),
+                ]:
+                    r = await db.execute(
+                        select(GlobalConfig).where(GlobalConfig.config_key == key_attr)
+                    )
+                    cfg = r.scalar_one_or_none()
+                    if cfg and cfg.config_value:
+                        if target_var == "default_username":
+                            default_username = cfg.config_value
+                        elif target_var == "default_password":
+                            default_password = cfg.config_value
+                        elif target_var == "browser_headless":
+                            browser_headless = cfg.config_value.lower() == "true"
+                break
+
+            # 步骤1: 使用 agent-browser 生成脚本
+            print("\n步骤1: 使用 agent-browser 打开页面、分析、生成脚本...")
+            final_script = await self._generate_agent_browser_script(
+                target_url=target_url,
+                user_query=user_query,
+                auto_detect_captcha=auto_detect_captcha,
+                auto_cookie_localstorage=auto_cookie_localstorage,
+                load_saved_storage=load_saved_storage,
+                browser_headless=browser_headless,
+                default_username=default_username,
+                default_password=default_password,
+            )
+            result["script"] = final_script
+            print("✅ 脚本生成完成")
+
+            # 步骤2: 生成测试名称
+            print("\n步骤2: 生成测试名称...")
+            test_name = await bailian_client.generate_test_name(user_query, result["actions"])
+            result["test_name"] = test_name
+            print(f"✅ 生成测试名称: {test_name}")
+
+            print("\n===== agent-browser 测试脚本生成完成 =====")
+            return result
+
+        except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            result["status"] = "error"
+            result["error"] = str(e)
+            print(f"\n❌ agent-browser 生成错误: {str(e)}")
+            print(f"\n错误详情:\n{error_detail}")
+            return result
+
+    async def _generate_agent_browser_script(
+        self,
+        target_url: str,
+        user_query: str,
+        auto_detect_captcha: bool = False,
+        auto_cookie_localstorage: bool = True,
+        load_saved_storage: bool = True,
+        browser_headless: bool = True,
+        default_username: str = "",
+        default_password: str = "",
+    ) -> str:
+        """
+        使用 agent-browser 真实浏览器生成 Python 测试脚本。
+        流程：open → snapshot → LLM 生成动作列表 → 逐步 snapshot+plan+执行 → 收集 element info → 组装脚本 → close
+        """
+        ab_service = AgentBrowserService()
+        action_planner = ActionPlanner()
+
+        # 读取环境变量配置
+        python_path = os.getenv('PYTHON_PATH', '')
+        session_storage_path = os.getenv('SESSION_STORAGE_PATH', '.')
+
+        # 收集每个 action 对应的代码行
+        action_codes = []
+
+        async def run_agent_browser_generation():
+            nonlocal action_codes
+
+            try:
+                # ===== 1. 检查 agent-browser 是否安装 =====
+                installed = await ab_service.check_installed()
+                if not installed:
+                    raise RuntimeError(
+                        "agent-browser 未安装。请运行: npm install -g @anthropic-ai/agent-browser && agent-browser install"
+                    )
+
+                # ===== 2. 打开浏览器 =====
+                print(f"[AgentBrowser] 正在打开浏览器: {target_url}")
+                open_result = await ab_service.open(target_url, headless=browser_headless)
+                if not open_result.get("success", True) and open_result.get("error"):
+                    raise RuntimeError(f"agent-browser open 失败: {open_result['error']}")
+                await ab_service.wait(3000)
+
+                # ===== 3. 加载 session（如果需要） =====
+                if load_saved_storage:
+                    cookies_file = os.path.join(session_storage_path, "saved_cookies.json")
+                    if os.path.exists(cookies_file):
+                        print(f"[AgentBrowser] 加载 cookies: {cookies_file}")
+                        import json as _json
+                        with open(cookies_file, "r", encoding="utf-8") as f:
+                            cookies = _json.load(f)
+                        for cookie in cookies:
+                            name = cookie.get("name", "")
+                            value = cookie.get("value", "")
+                            domain = cookie.get("domain", "")
+                            if name and value:
+                                await ab_service.cookies_set(name, value, domain=domain)
+
+                # ===== 4. 获取无障碍树快照用于生成 actions =====
+                print("[AgentBrowser] 获取页面无障碍树快照...")
+                initial_snap = await ab_service.snapshot(interactive=True)
+                initial_snapshot_text = initial_snap.get("data", {}).get("snapshot", "") or initial_snap.get("snapshot", "") or initial_snap.get("raw_output", "")
+                print(f"[AgentBrowser] 快照长度: {len(initial_snapshot_text)} 字符")
+
+                # ===== 5. 基于快照生成操作步骤 =====
+                print("[AgentBrowser] 基于无障碍树快照生成操作步骤...")
+                actions = await self._generate_actions_from_snapshot(
+                    user_query, target_url, initial_snapshot_text
+                )
+                print(f"[AgentBrowser] 生成了 {len(actions)} 个操作步骤:")
+                for idx, action in enumerate(actions):
+                    print(f"   {idx + 1}. {action}")
+
+                # ===== 6. 逐步 snapshot+plan+执行，收集 element_name/element_role =====
+                aggregated = ""
+                captcha_injected = False
+                step_counter = 0  # 独立步骤计数器（避免注入步骤时编号冲突）
+
+                for i, action in enumerate(actions[1:], 1):  # 跳过导航
+                    # 跳过验证码截图/VL识别动作
+                    if self._is_captcha_recognition_action(action):
+                        print(f"[AgentBrowser] 跳过验证码识别动作: {action}")
+                        continue
+                    if self._is_captcha_fill_action(action):
+                        print(f"[AgentBrowser] 跳过验证码填写动作: {action}")
+                        continue
+
+                    step_counter += 1
+
+                    is_verification = any(k in action.lower() for k in [
+                        '验证', '断言', 'assert', '检查', '确认', '存在', '显示',
+                        'verify', 'check', 'validate', 'confirm', 'visible', 'exist'
+                    ])
+
+                    # 在登录按钮点击前注入验证码处理
+                    action_lower = action.lower()
+                    action_no_space = action_lower.replace(" ", "")
+                    is_login_action = any(k in action_no_space for k in [
+                        '登录', '登入', 'login', 'signin', '提交', 'submit'
+                    ]) and any(k in action_no_space for k in ['点击', 'click', '按钮', 'button', '提交'])
+
+                    if auto_detect_captcha and is_login_action and not captcha_injected:
+                        print(f"[AgentBrowser] 在登录前注入验证码处理代码")
+                        captcha_step = step_counter
+                        step_counter += 1  # 验证码占一个步骤，后面的动作编号递增
+                        action_escaped_cap = repr("自动检测验证码")
+                        action_codes.append(f"        # [自动验证码处理] 在登录前自动检测并填写验证码")
+                        action_codes.append(f"        log_step_start({captcha_step}, {action_escaped_cap}, 'action')")
+                        action_codes.append(f"        try:")
+                        action_codes.append(f"            ab.detect_and_solve_captcha()")
+                        action_codes.append(f"            log_step_end({captcha_step}, 'passed')")
+                        action_codes.append(f"        except Exception as e:")
+                        action_codes.append(f"            log_step_end({captcha_step}, 'failed', error_message=str(e))")
+                        action_codes.append(f"            print(f'验证码处理失败（非致命）: {{e}}')")
+                        captcha_injected = True
+
+                    action_escaped = repr(action)
+                    sn = step_counter  # 当前步骤编号
+
+                    if is_verification:
+                        # 验证操作：截图 + 标记通过（与 computer-use 模式一致）
+                        print(f"   操作 {i} 是验证类型: {action}")
+                        action_codes.append(f"        # Action {sn}: {action}")
+                        action_codes.append(f"        log_step_start({sn}, {action_escaped}, 'verify')")
+                        action_codes.append(f"        try:")
+                        action_codes.append(f"            ab.screenshot()")
+                        action_codes.append(f"            ab.wait(2000)")
+                        action_codes.append(f"            log_step_end({sn}, 'passed')")
+                        action_codes.append(f"        except Exception as e:")
+                        action_codes.append(f"            log_step_end({sn}, 'failed', error_message=str(e))")
+                        action_codes.append(f"            raise")
+
+                        # 在真实浏览器上也执行截图（推进状态）
+                        await ab_service.screenshot()
+                    else:
+                        # 获取最新快照
+                        snap = await ab_service.snapshot(interactive=True)
+                        snapshot_text = snap.get("data", {}).get("snapshot", "") or snap.get("snapshot", "") or snap.get("raw_output", "")
+
+                        # 用 LLM 规划操作
+                        plan = await action_planner.plan_action(
+                            action, snapshot_text, aggregated,
+                            default_username=default_username,
+                            default_password=default_password,
+                        )
+
+                        if plan.get("error"):
+                            print(f"   ⚠️ 操作 {i} ActionPlanner 错误: {plan.get('reasoning', '')}")
+                            action_codes.append(f"        # Action {sn}: {action} (ActionPlanner 错误，跳过)")
+                            aggregated += f"\n# Action {sn}: {action} (skipped)"
+                            continue
+
+                        cmd = plan["command"]
+                        ref = plan["ref"]
+                        value = plan.get("value", "")
+                        element_name = plan.get("element_name", "")
+                        element_role = plan.get("element_role", "")
+
+                        # 生成 Python 代码行（使用 smart_click/smart_fill）
+                        action_codes.append(f"        # Action {sn}: {action}")
+                        action_codes.append(f"        log_step_start({sn}, {action_escaped}, 'action')")
+                        action_codes.append(f"        try:")
+
+                        if cmd == "fill" and element_name:
+                            value_escaped = repr(value)
+                            name_escaped = repr(element_name)
+                            role_escaped = repr(element_role) if element_role else "None"
+                            action_codes.append(f"            ab.smart_fill(element_text={name_escaped}, value={value_escaped}, element_role={role_escaped})")
+                        elif cmd == "click" and element_name:
+                            name_escaped = repr(element_name)
+                            role_escaped = repr(element_role) if element_role else "None"
+                            action_codes.append(f"            ab.smart_click(element_text={name_escaped}, element_role={role_escaped})")
+                        elif cmd == "wait":
+                            action_codes.append(f"            ab.wait(2000)")
+                        elif cmd == "screenshot":
+                            action_codes.append(f"            ab.screenshot()")
+                        else:
+                            # 回退：如果没有 element_name，使用通用描述
+                            if cmd == "click":
+                                action_codes.append(f"            ab.smart_click(element_text={repr(action)}, element_role=None)")
+                            elif cmd == "fill":
+                                action_codes.append(f"            ab.smart_fill(element_text={repr(action)}, value={repr(value)}, element_role=None)")
+                            else:
+                                action_codes.append(f"            ab.wait(2000)")
+
+                        action_codes.append(f"            ab.wait(2000)")
+                        action_codes.append(f"            log_step_end({sn}, 'passed')")
+                        action_codes.append(f"        except Exception as e:")
+                        action_codes.append(f"            log_step_end({sn}, 'failed', error_message=str(e))")
+                        action_codes.append(f"            raise")
+
+                        # 在真实浏览器上执行操作（推进页面状态）
+                        try:
+                            if cmd == "click" and ref:
+                                await ab_service.click(ref)
+                            elif cmd == "fill" and ref:
+                                await ab_service.fill(ref, value)
+                            elif cmd == "wait":
+                                await ab_service.wait(2000)
+                            elif cmd == "screenshot":
+                                await ab_service.screenshot()
+                            await ab_service.wait(2000)
+                        except Exception as exec_err:
+                            print(f"   ⚠️ 操作 {i} 执行失败（不影响脚本生成）: {exec_err}")
+
+                    aggregated += f"\n# Action {i}: {action}"
+
+                # ===== 7. 保存 session =====
+                if auto_cookie_localstorage:
+                    try:
+                        cookies_result = await ab_service.cookies_get()
+                        _data = cookies_result.get("data", {})
+                        cookies_data = _data.get("cookies", []) if isinstance(_data, dict) else []
+                        if not cookies_data:
+                            cookies_data = cookies_result.get("cookies", [])
+                        if cookies_data:
+                            os.makedirs(session_storage_path, exist_ok=True)
+                            cookies_file = os.path.join(session_storage_path, "saved_cookies.json")
+                            import json as _json
+                            with open(cookies_file, "w", encoding="utf-8") as f:
+                                _json.dump(cookies_data, f, ensure_ascii=False, indent=2)
+                            print(f"[AgentBrowser] Cookies 已保存: {len(cookies_data)} 个")
+                    except Exception as e:
+                        print(f"[AgentBrowser] 保存 cookies 失败: {e}")
+
+            finally:
+                print("[AgentBrowser] 正在关闭浏览器...")
+                try:
+                    await ab_service.close()
+                    print("[AgentBrowser] 浏览器已关闭")
+                except Exception as close_err:
+                    print(f"[AgentBrowser] 关闭浏览器失败: {close_err}")
+
+        # 在主事件循环中执行（agent-browser 是 Node CLI，不需要 ProactorEventLoop）
+        await run_agent_browser_generation()
+
+        # 组装完整 Python 脚本
+        actions_str = "\n".join(action_codes)
+
+        # 构建 cookies 加载/保存代码
+        cookies_load_code = ""
+        if load_saved_storage:
+            cookies_load_code = f"""
+        # 加载 cookies
+        cookies_file = os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json')
+        if os.path.exists(cookies_file):
+            ab.load_cookies(cookies_file)
+            print(f'[TEST] Cookies loaded from {{cookies_file}}')
+"""
+
+        cookies_save_code = ""
+        if auto_cookie_localstorage:
+            cookies_save_code = f"""
+        # 保存 cookies
+        cookies_file = os.path.join(SESSION_STORAGE_PATH, 'saved_cookies.json')
+        ab.save_cookies(cookies_file)
+"""
+
+        script = f'''import sys
+import os
+
+# 配置常量（从环境变量读取）
+PYTHON_PATH = r'{python_path}'
+SESSION_STORAGE_PATH = r'{session_storage_path}'
+
+# 必须在最开头处理PYTHON_PATH，否则后续import可能找不到模块
+if PYTHON_PATH and PYTHON_PATH not in sys.path:
+    sys.path.insert(0, PYTHON_PATH)
+
+import pytest
+import json
+import time
+import uuid
+from datetime import datetime
+
+# 全局步骤结果列表
+step_results = []
+
+def log_step_start(step_number, step_name, step_type="action"):
+    """记录步骤开始"""
+    log_entry = {{
+        "event": "step_start",
+        "step_number": step_number,
+        "step_name": step_name,
+        "step_type": step_type,
+        "status": "running",
+        "start_time": datetime.now().isoformat(),
+        "timestamp": time.time()
+    }}
+    step_results.append(log_entry)
+    print(json.dumps(log_entry, ensure_ascii=False))
+
+def log_step_end(step_number, status="passed", output_data=None, error_message=None):
+    """记录步骤结束"""
+    end_time = datetime.now().isoformat()
+    start_timestamp = None
+    for step in reversed(step_results):
+        if step.get("step_number") == step_number and step.get("event") == "step_start":
+            start_timestamp = step.get("timestamp")
+            break
+
+    duration_ms = None
+    if start_timestamp:
+        duration_ms = int((time.time() - start_timestamp) * 1000)
+
+    log_entry = {{
+        "event": "step_end",
+        "step_number": step_number,
+        "status": status,
+        "end_time": end_time,
+        "execution_duration_ms": duration_ms,
+        "output_data": output_data,
+        "error_message": error_message
+    }}
+    print(json.dumps(log_entry, ensure_ascii=False))
+
+def test_generated():
+    print(json.dumps({{"event": "test_start", "message": "Test started"}}, ensure_ascii=False))
+    from app.utils.ab_browser_util import AgentBrowserUtil
+    ab = AgentBrowserUtil(session_id=uuid.uuid4().hex[:8])
+    test_start_time = time.time()
+
+    try:
+        # Step 0: Navigate
+        log_step_start(0, "Navigate to {target_url}", "navigation")
+        try:
+            ab.open("{target_url}", headless={browser_headless})
+            time.sleep(3)
+            ab.wait(3000)
+            log_step_end(0, "passed", {{"url": "{target_url}"}})
+        except Exception as e:
+            log_step_end(0, "failed", error_message=str(e))
+            raise
+{cookies_load_code}
+        # Execute all actions
+{actions_str}
+{cookies_save_code}
+        print(json.dumps({{"event": "test_completed", "total_duration_ms": int((time.time() - test_start_time) * 1000)}}, ensure_ascii=False))
+
+    except Exception as e:
+        import traceback
+        print(json.dumps({{
+            "event": "test_failed",
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }}, ensure_ascii=False))
+        raise
+    finally:
+        try:
+            ab.close()
+        except Exception:
+            pass
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v", "-s"])
+'''
+        return script
+
     async def _execute_action_async(self, page, action_result):
         """异步执行页面操作（使用坐标定位，用于生成期间推进页面状态）"""
         try:
@@ -1346,9 +1850,9 @@ if __name__ == "__main__":
             output = result.stdout + "\n" + result.stderr
 
             print(f"   测试执行完成，返回码: {result.returncode}")
-            print(f"   标准输出:\n{result.stdout[:1000]}")
+            print(f"   标准输出:\n{result.stdout[:5000]}")
             if result.stderr:
-                print(f"   标准错误:\n{result.stderr[:500]}")
+                print(f"   标准错误:\n{result.stderr[:2000]}")
 
             return output
         except subprocess.TimeoutExpired:

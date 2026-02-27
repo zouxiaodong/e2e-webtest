@@ -11,7 +11,9 @@
       "Bash(python:*)",
       "Bash(sudo ln:*)",
       "Bash(curl:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch"
     ]
   }
 }

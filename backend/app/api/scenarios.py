@@ -207,48 +207,81 @@ async def generate_scenario_cases(
         # 获取场景的load_saved_storage配置
         load_saved_storage = scenario.load_saved_storage if hasattr(scenario, 'load_saved_storage') else True
         print(f"   Load saved storage from scenario: {load_saved_storage}")
-        
-        # 生成多个测试用例（内部会获取页面内容，并返回页面内容供后续使用）
-        strategy = generation_strategy or scenario.generation_strategy
-        test_cases_data, page_content = await test_generator.generate_multiple_test_cases(
-            scenario.user_query,
-            scenario.target_url,
-            strategy,
-            load_saved_storage
+
+        # 从场景配置读取公共参数
+        use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
+        auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
+
+        # 提前读取模式配置（只查一次）
+        use_agent_browser = False
+        config_ab_result = await db.execute(
+            select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.USE_AGENT_BROWSER)
         )
-        print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
+        config_ab = config_ab_result.scalar_one_or_none()
+        if config_ab and config_ab.config_value:
+            use_agent_browser = config_ab.config_value.lower() == "true"
+
+        use_computer_use = False
+        config_cu_result = await db.execute(
+            select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.USE_COMPUTER_USE)
+        )
+        config_cu = config_cu_result.scalar_one_or_none()
+        if config_cu and config_cu.config_value:
+            use_computer_use = config_cu.config_value.lower() == "true"
+
+        # agent-browser 模式下不需要预先获取页面内容（snapshot 在内部完成）
+        if use_agent_browser:
+            print(f"   [agent-browser 模式] 跳过 Playwright/VL 页面分析，由 agent-browser snapshot 完成")
+            # 仍需生成测试用例元数据（名称、描述等），但不需要页面截图分析
+            # 使用纯文本 LLM 生成用例列表
+            strategy = generation_strategy or scenario.generation_strategy
+            test_cases_data = await test_generator.generate_test_cases_metadata(
+                scenario.user_query,
+                scenario.target_url,
+                strategy
+            )
+            page_content = None  # agent-browser 模式不需要 page_content
+        else:
+            # DOM 或 Computer-Use 模式：正常获取页面内容 + VL 分析
+            strategy = generation_strategy or scenario.generation_strategy
+            test_cases_data, page_content = await test_generator.generate_multiple_test_cases(
+                scenario.user_query,
+                scenario.target_url,
+                strategy,
+                load_saved_storage
+            )
+            print(f"   Page content fetched: {page_content.get('title', 'N/A')}")
 
         # 为每个用例生成操作步骤和脚本
         generated_cases = []
         print(f"   开始处理 {len(test_cases_data)} 个测试用例数据...")
         for idx, case_data in enumerate(test_cases_data, 1):
             print(f"   处理第 {idx}/{len(test_cases_data)} 个用例: {case_data.get('name', 'Unknown')}")
-            # 生成操作步骤
-            actions = await test_generator.generate_actions(
-                case_data["user_query"],
-                scenario.target_url
-            )
+            # 生成操作步骤（agent-browser 模式下在内部通过 snapshot 生成，这里跳过）
+            if not use_agent_browser:
+                actions = await test_generator.generate_actions(
+                    case_data["user_query"],
+                    scenario.target_url
+                )
+            else:
+                actions = []  # agent-browser 内部生成
 
-            # 生成测试脚本（使用已获取的页面内容，避免重复打开浏览器）
+            # 生成测试脚本
             print(f"   Generating script for test case: {case_data['name']}")
-            # 从场景配置读取是否使用验证码和自动 Cookie/LocalStorage
-            use_captcha = scenario.use_captcha if hasattr(scenario, 'use_captcha') else False
-            auto_cookie_localstorage = scenario.auto_cookie_localstorage if hasattr(scenario, 'auto_cookie_localstorage') else True
-            print(f"   Use captcha from scenario: {use_captcha}")
-            print(f"   Auto cookie/localstorage from scenario: {auto_cookie_localstorage}")
+            print(f"   Mode: {'agent-browser' if use_agent_browser else 'computer-use' if use_computer_use else 'DOM'}")
 
-            # 从全局配置读取是否使用 Computer-Use 方案
-            use_computer_use_config = await db.execute(
-                select(GlobalConfig).where(GlobalConfig.config_key == ConfigKeys.USE_COMPUTER_USE)
-            )
-            use_computer_use = False  # 默认不使用
-            config_cu = use_computer_use_config.scalar_one_or_none()
-            if config_cu and config_cu.config_value:
-                use_computer_use = config_cu.config_value.lower() == "true"
-            print(f"   Use Computer-Use from config: {use_computer_use}")
-
-            # 根据配置选择使用哪种方案
-            if use_computer_use:
+            # 根据配置选择使用哪种方案（三种互斥：agent-browser > computer-use > dom）
+            if use_agent_browser:
+                print(f"   Using agent-browser approach for: {case_data['name']}")
+                script_result = await test_executor.generate_script_with_agent_browser(
+                    case_data["user_query"],
+                    scenario.target_url,
+                    auto_detect_captcha=use_captcha,
+                    auto_cookie_localstorage=auto_cookie_localstorage,
+                    load_saved_storage=load_saved_storage,
+                    page_content=page_content
+                )
+            elif use_computer_use:
                 print(f"   Using Computer-Use approach for: {case_data['name']}")
                 script_result = await test_executor.generate_script_with_computer_use(
                     case_data["user_query"],
@@ -642,8 +675,14 @@ async def quick_generate_scenario(
                 target_url
             )
 
-            # 生成测试脚本（根据配置选择方案）
-            if request.use_computer_use:
+            # 生成测试脚本（根据配置选择方案：agent-browser > computer-use > dom）
+            if request.use_agent_browser:
+                execution_result = await test_executor.generate_script_with_agent_browser(
+                    case_data["user_query"],
+                    target_url,
+                    auto_detect_captcha=request.auto_detect_captcha
+                )
+            elif request.use_computer_use:
                 # 使用 Computer-Use 方案（截图+坐标定位）
                 execution_result = await test_executor.generate_script_with_computer_use(
                     case_data["user_query"],

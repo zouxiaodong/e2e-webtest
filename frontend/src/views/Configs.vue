@@ -69,6 +69,11 @@
           <div class="form-tip">使用截图+坐标定位方案（更稳定但成本更高，需要VL模型支持）</div>
         </el-form-item>
 
+        <el-form-item label="使用 Agent-Browser">
+          <el-switch v-model="form.use_agent_browser" />
+          <div class="form-tip">使用无障碍树+ref定位方案（最稳定，需要安装 agent-browser CLI）</div>
+        </el-form-item>
+
         <el-form-item label="浏览器超时">
           <el-input-number 
             v-model="form.browser_timeout" 
@@ -96,7 +101,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { configsApi } from '@/api/configs'
 
@@ -108,11 +113,20 @@ const form = ref({
   captcha_input_selector: '',
   browser_headless: true,
   use_computer_use: false,
+  use_agent_browser: false,
   browser_timeout: 30000
 })
 
 const loading = ref(false)
 const saving = ref(false)
+
+// 三种模式互斥：agent-browser / computer-use / dom选择器
+watch(() => form.value.use_agent_browser, (v) => {
+  if (v) form.value.use_computer_use = false
+})
+watch(() => form.value.use_computer_use, (v) => {
+  if (v) form.value.use_agent_browser = false
+})
 
 // 加载配置
 const loadConfig = async () => {

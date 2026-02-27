@@ -2,7 +2,11 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, text, event
 from datetime import datetime
+import logging
 from .config import settings
+
+# SQLAlchemy engine 日志：仅输出 WARNING 及以上（屏蔽大量 SQL INFO 日志）
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 
 # 从 models 导入基类（避免循环导入）
 from ..models.test_case import Base as BaseModel
@@ -19,8 +23,10 @@ from ..models.test_case import TestScenario, TestCase, TestReport, TestStepResul
 is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
 # 创建异步数据库引擎
+# echo="debug" 会输出所有SQL，echo=True 输出SQL语句，echo=False 关闭
+# 使用 echo=False + logging WARNING 级别，避免日志中大量 SQL INFO 输出
 engine_kwargs = {
-    "echo": settings.DEBUG,
+    "echo": False,
     "future": True
 }
 

@@ -197,6 +197,7 @@ class QuickGenerateRequest(BaseModel):
     generation_strategy: GenerationStrategy = Field(GenerationStrategy.BASIC, description="生成策略")
     auto_detect_captcha: bool = Field(False, description="是否自动识别验证码")
     use_computer_use: bool = Field(False, description="是否使用 Computer-Use 方案（截图+坐标定位）")
+    use_agent_browser: bool = Field(False, description="是否使用 agent-browser 方案（无障碍树+ref定位）")
 
 
 class QuickGenerateResponse(BaseModel):

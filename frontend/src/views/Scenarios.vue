@@ -83,13 +83,9 @@
           <el-switch v-model="createForm.use_captcha" />
           <div class="form-tip">开启后自动检测并识别验证码</div>
         </el-form-item>
-        <el-form-item label="自动 Cookie/LocalStorage">
-          <el-switch v-model="createForm.auto_cookie_localstorage" />
-          <div class="form-tip">开启后自动加载和保存 Cookie/LocalStorage</div>
-        </el-form-item>
-        <el-form-item label="加载保存的Storage">
-          <el-switch v-model="createForm.load_saved_storage" />
-          <div class="form-tip">开启后加载之前保存的Cookie/LocalStorage/SessionStorage（登录场景建议关闭）</div>
+        <el-form-item label="登录场景">
+          <el-switch v-model="createForm.is_login_scenario" />
+          <div class="form-tip">开启后执行时不加载已保存的会话（需要全新登录），执行完成后自动保存登录状态供其他场景复用</div>
         </el-form-item>
       </el-form>
       <template #footer>
@@ -121,9 +117,9 @@
               {{ currentScenario.use_captcha ? '是' : '否' }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="自动 Cookie/LocalStorage">
-            <el-tag :type="currentScenario.auto_cookie_localstorage ? 'success' : 'info'">
-              {{ currentScenario.auto_cookie_localstorage ? '是' : '否' }}
+          <el-descriptions-item label="登录场景">
+            <el-tag :type="!currentScenario.load_saved_storage ? 'warning' : 'success'">
+              {{ !currentScenario.load_saved_storage ? '是（不加载已保存会话）' : '否（自动加载已保存会话）' }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="场景描述" :span="2">{{ currentScenario.user_query }}</el-descriptions-item>
@@ -300,8 +296,7 @@ const createForm = ref({
   user_query: '',
   generation_strategy: 'basic',
   use_captcha: false,
-  auto_cookie_localstorage: true,
-  load_saved_storage: true
+  is_login_scenario: false
 })
 
 // 加载场景列表
@@ -326,7 +321,7 @@ const showCreateDialog = () => {
     user_query: '',
     generation_strategy: 'basic',
     use_captcha: false,
-    auto_cookie_localstorage: true
+    is_login_scenario: false
   }
   createDialogVisible.value = true
 }
@@ -343,8 +338,7 @@ const editScenario = async (scenario) => {
       user_query: scenario.user_query,
       generation_strategy: scenario.generation_strategy,
       use_captcha: scenario.use_captcha || false,
-      auto_cookie_localstorage: scenario.auto_cookie_localstorage !== undefined ? scenario.auto_cookie_localstorage : true,
-      load_saved_storage: scenario.load_saved_storage !== undefined ? scenario.load_saved_storage : true
+      is_login_scenario: scenario.load_saved_storage === false
     }
     createDialogVisible.value = true
   } catch (error) {
@@ -355,11 +349,18 @@ const editScenario = async (scenario) => {
 // 创建或更新场景
 const handleCreateOrEdit = async () => {
   try {
+    // 将 is_login_scenario 转换为后端字段
+    const { is_login_scenario, ...rest } = createForm.value
+    const payload = {
+      ...rest,
+      auto_cookie_localstorage: true,  // 始终自动保存
+      load_saved_storage: !is_login_scenario  // 登录场景不加载已保存的会话
+    }
     if (isEdit.value) {
-      await scenariosApi.update(editingScenarioId.value, createForm.value)
+      await scenariosApi.update(editingScenarioId.value, payload)
       ElMessage.success('更新成功')
     } else {
-      await scenariosApi.create(createForm.value)
+      await scenariosApi.create(payload)
       ElMessage.success('创建成功')
     }
     createDialogVisible.value = false

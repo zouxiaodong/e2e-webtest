@@ -652,6 +652,32 @@ class TestGenerator:
 
         return test_cases, page_content
 
+    async def generate_test_cases_metadata(
+        self,
+        user_query: str,
+        target_url: str,
+        generation_strategy: GenerationStrategy = GenerationStrategy.BASIC,
+    ) -> List[Dict[str, Any]]:
+        """
+        仅生成测试用例元数据（名称、描述、优先级等），不获取页面内容、不调用VL模型。
+        用于 agent-browser 模式：页面分析和动作生成由 agent-browser snapshot 完成。
+        """
+        print(f"[agent-browser] 生成测试用例元数据（无页面分析）: {user_query}")
+
+        # 构造一个空的 page_analysis，只保留最低要求
+        empty_analysis = {"page_type": "unknown", "forms": [], "buttons": [], "test_suggestions": []}
+
+        if generation_strategy == GenerationStrategy.HAPPY_PATH:
+            test_cases = await self._generate_happy_path_cases(user_query, target_url, empty_analysis)
+        elif generation_strategy == GenerationStrategy.BASIC:
+            test_cases = await self._generate_basic_cases(user_query, target_url, empty_analysis)
+        elif generation_strategy == GenerationStrategy.COMPREHENSIVE:
+            test_cases = await self._generate_comprehensive_cases(user_query, target_url, empty_analysis)
+        else:
+            test_cases = await self._generate_basic_cases(user_query, target_url, empty_analysis)
+
+        return test_cases
+
     async def _generate_happy_path_cases(
         self,
         user_query: str,
