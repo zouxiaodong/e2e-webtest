@@ -69,6 +69,8 @@ backend/.env
 backend/.venv
 backend/app/temp/
 backend/error_screenshot.png
+backend/browser_profile/
+backend/screenshots/
 
 # Trae
 .trae/
