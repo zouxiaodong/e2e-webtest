@@ -16,12 +16,18 @@ class ActionPlanner:
   @e3 button "登录"
 
 你需要返回一个 JSON 对象，包含以下字段：
-- command: 要执行的命令类型，取值为 "click", "fill", "wait", "screenshot", "scroll", "verify"
-- ref: 目标元素的引用 (如 "@e3")，verify/wait/screenshot/scroll 类型可为空字符串
-- value: fill 命令时需要填写的文本值，其他命令为空字符串
+- command: 要执行的命令类型，取值为 "click", "fill", "press", "wait", "screenshot", "scroll", "verify"
+- ref: 目标元素的引用 (如 "@e3")，press/verify/wait/screenshot/scroll 类型可为空字符串
+- value: fill 命令时需要填写的文本值，press 命令时为按键名称（如 "Escape", "Enter", "Tab"），其他命令为空字符串
 - element_name: 目标元素在快照中显示的名称（引号内的文字，如 "用户名"、"登录"）
-- element_role: 目标元素的角色类型 (textbox, button, link, checkbox 等)
+- element_role: 目标元素的角色类型 (textbox, button, link, checkbox, combobox, option, listbox 等)
 - reasoning: 你的推理过程（简短说明为什么选择这个元素）
+
+重要规则：
+1. 如果操作要求"按Escape键"、"按回车键"等键盘操作，command 必须为 "press"，value 为按键名称（Escape/Enter/Tab/ArrowDown/ArrowUp）
+2. 如果操作要求在下拉选项列表中选择某个选项，在快照中找到该选项元素（通常是 option 或 listitem 角色），使用 "click" 命令点击该选项
+3. 如果操作要求填写表单字段，生成的 value 必须是具体的测试数据（不要用占位符），要符合常见的表单验证规则
+4. 下拉框展开后，选项可能以 option、listitem、menuitem 等角色出现在快照中
 
 只输出 JSON，不要添加其他内容。"""
 

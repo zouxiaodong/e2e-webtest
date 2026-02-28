@@ -158,6 +158,14 @@ class AgentBrowserService:
         """设置浏览器视口大小"""
         return await self._run_cli(["set", "viewport", str(width), str(height)], timeout=10)
 
+    async def press_key(self, key: str) -> Dict[str, Any]:
+        """按下键盘按键，如 Escape, Enter, Tab, ArrowDown 等"""
+        return await self._run_cli(["press", key], timeout=10)
+
+    async def select_option(self, ref: str, value: str) -> Dict[str, Any]:
+        """选择下拉框选项（仅适用于原生 <select> 元素）"""
+        return await self._run_cli(["select", ref, value], timeout=15)
+
     async def snapshot(self, interactive: bool = True) -> Dict[str, Any]:
         """
         获取页面无障碍树快照

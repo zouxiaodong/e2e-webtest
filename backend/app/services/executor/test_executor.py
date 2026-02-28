@@ -1294,10 +1294,20 @@ if __name__ == "__main__":
 最后一个操作应该始终是断言测试的预期结果。
 不要在这个JSON结构之外添加任何额外的字符、注释或解释。只输出JSON结果。
 
+重要规则：
+1. 每个表单字段的填写必须是独立的一个操作步骤，不要合并多个字段的填写。
+2. 下拉框/选择器交互必须拆分为多个原子步骤：
+   - 步骤A：点击下拉框打开选项列表
+   - 步骤B：在展开的下拉选项列表中点击选择某个选项
+   - 步骤C：按Escape键关闭下拉框（如果是多选下拉框或下拉框未自动关闭）
+3. 如果用户描述中提到"带*的必填字段"或"所有必填项"，必须为每个可能的必填字段生成独立的填写步骤。
+4. 填写表单值时必须遵守用户描述中的验证规则（如字符数限制、格式要求等），生成符合规则的测试数据。
+5. 弹窗/对话框中的操作：先点击打开弹窗，再逐个操作弹窗内的元素。
+
 当前页面无障碍树快照（@eN 为可交互元素的引用）：
 {snapshot_text[:5000]}
 
-示例:
+示例1:
 输入: "测试网站的登录流程"
 输出: {{
     "actions": [
@@ -1306,6 +1316,26 @@ if __name__ == "__main__":
         "定位并在'password'输入框中输入有效的密码",
         "点击'登录'按钮提交凭据",
         "通过期望页面跳转到首页来验证用户已登录"
+    ]
+}}
+
+示例2:
+输入: "新增用户，填写所有必填字段，选择角色，保存"
+输出: {{
+    "actions": [
+        "通过URL导航到用户管理页面。",
+        "点击'新增'按钮打开新增用户弹窗",
+        "在弹窗中填写用户账号输入框，输入符合规则的账号（英文字母开头，不超过20字符）",
+        "在弹窗中填写用户姓名输入框",
+        "在弹窗中填写密码输入框，输入包含大小写字母和数字的密码",
+        "在弹窗中填写确认密码输入框，输入与密码一致的值",
+        "在弹窗中填写手机号码输入框，输入11位有效手机号",
+        "在弹窗中填写邮箱输入框，输入有效邮箱格式",
+        "点击角色下拉框打开角色选项列表",
+        "在展开的角色选项列表中点击选择一个角色",
+        "按Escape键关闭角色下拉框",
+        "点击'确定'按钮保存新用户",
+        "验证用户列表中出现新增的用户"
     ]
 }}
 
@@ -1590,6 +1620,9 @@ if __name__ == "__main__":
                             name_escaped = repr(element_name)
                             role_escaped = repr(element_role) if element_role else "None"
                             action_codes.append(f"            ab.smart_click(element_text={name_escaped}, element_role={role_escaped})")
+                        elif cmd == "press":
+                            key_escaped = repr(value) if value else repr("Escape")
+                            action_codes.append(f"            ab.press_key({key_escaped})")
                         elif cmd == "wait":
                             action_codes.append(f"            ab.wait(2000)")
                         elif cmd == "screenshot":
@@ -1618,6 +1651,8 @@ if __name__ == "__main__":
                                 await ab_service.click(ref)
                             elif cmd == "fill" and ref:
                                 await ab_service.fill(ref, value)
+                            elif cmd == "press":
+                                await ab_service.press_key(value or "Escape")
                             elif cmd == "wait":
                                 await ab_service.wait(2000)
                             elif cmd == "screenshot":
