@@ -154,6 +154,10 @@ class AgentBrowserService:
             args.append("--headed")
         return await self._run_cli(args, timeout=60)
 
+    async def set_viewport(self, width: int = 1920, height: int = 1080) -> Dict[str, Any]:
+        """设置浏览器视口大小"""
+        return await self._run_cli(["set", "viewport", str(width), str(height)], timeout=10)
+
     async def snapshot(self, interactive: bool = True) -> Dict[str, Any]:
         """
         获取页面无障碍树快照

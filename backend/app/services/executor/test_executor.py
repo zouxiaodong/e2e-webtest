@@ -1462,6 +1462,7 @@ if __name__ == "__main__":
                 open_result = await ab_service.open(target_url, headless=browser_headless)
                 if not open_result.get("success", True) and open_result.get("error"):
                     raise RuntimeError(f"agent-browser open 失败: {open_result['error']}")
+                await ab_service.set_viewport(1920, 1080)
                 await ab_service.wait(3000)
 
                 # ===== 3. 会话由 --profile 自动管理（cookies、localStorage 等） =====
@@ -1743,6 +1744,7 @@ def test_generated():
         log_step_start(0, "Navigate to {target_url}", "navigation")
         try:
             ab.open("{target_url}", headless={browser_headless})
+            ab.set_viewport(1920, 1080)
             time.sleep(3)
             ab.wait(3000)
             # 截图

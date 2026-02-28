@@ -124,6 +124,10 @@ class AgentBrowserUtil:
             args.append("--headed")
         return self._run_cli(args, timeout=60)
 
+    def set_viewport(self, width: int = 1920, height: int = 1080) -> Dict[str, Any]:
+        """设置浏览器视口大小"""
+        return self._run_cli(["set", "viewport", str(width), str(height)], timeout=10)
+
     def snapshot(self, interactive: bool = True) -> Dict[str, Any]:
         """获取页面无障碍树快照"""
         args = ["snapshot"]
